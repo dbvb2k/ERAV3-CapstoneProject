@@ -1,10 +1,11 @@
-# Place Identifier API
+# Location-Based Travel Planning System
 
-A REST API service that identifies locations from images using the GeoCLIP model. The service provides location predictions with confidence scores and detailed address information.
+A comprehensive system that combines image-based location identification with an AI-powered travel planning chatbot. The system can identify locations from images and generate detailed travel itineraries based on user preferences.
 
 ## Features
 
-- Image-based location identification
+### Location Identification API
+- Image-based location identification using [GeoCLIP](https://github.com/VicenteVivan/geo-clip) model
 - Multiple location predictions with confidence scores
 - Detailed address information using reverse geocoding
 - RESTful API with Swagger documentation
@@ -12,10 +13,23 @@ A REST API service that identifies locations from images using the GeoCLIP model
 - Configurable settings via environment variables
 - Comprehensive error handling and logging
 
+### Travel Planning Chatbot
+- Dynamic itinerary generation based on user preferences
+- Support for flexible trip durations (3+ days)
+- Detailed daily schedules with specific timings
+- Flight information from specified departure city
+- Hotel recommendations with pricing
+- Local transportation options
+- Restaurant recommendations
+- Budget breakdown in local currency
+- Travel tips and local customs information
+- Comprehensive logging of all interactions
+
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.12+
 - CUDA-compatible GPU (recommended for better performance)
+- Ollama server running locally with llama3.1:8b-instruct-q4_K_M model
 
 ## Installation
 
@@ -41,31 +55,33 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+5. Install and start Ollama server:
+```bash
+# Follow Ollama installation instructions for your platform
+# Pull the required model
+ollama pull llama3.1:8b-instruct-q4_K_M
+```
+
 ## Usage
 
-1. Start the API server:
+1. Start the Location Identification API:
 ```bash
 python api.py
 ```
 
-2. Access the API documentation:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-3. Health check endpoint:
+2. Start the Travel Planning Chatbot:
 ```bash
-curl http://localhost:8000/health
+streamlit run chatbot_app.py
 ```
 
-4. Make predictions:
-```bash
-curl -X POST "http://localhost:8000/predict" \
-     -H "accept: application/json" \
-     -H "Content-Type: multipart/form-data" \
-     -F "file=@path/to/image.jpg" \
-     -F "num_predictions=3" \
-     -F "min_confidence=50"
-```
+3. Access the applications:
+- Location API Documentation: http://localhost:8000/docs
+- Travel Planning Chatbot: http://localhost:8501
+
+4. Using the Chatbot:
+- Upload an image of a location
+- Specify your travel preferences (e.g., "Plan a trip for 5 days from Bangalore")
+- Receive a detailed travel itinerary
 
 ## API Endpoints
 
@@ -106,6 +122,11 @@ Health check endpoint.
 
 The application can be configured using environment variables or a `.env` file. See `.env.example` for available options.
 
+### Key Configuration Options
+- `API_URL`: Location API endpoint (default: http://localhost:8000/predict)
+- `OLLAMA_API_URL`: Ollama API endpoint (default: http://localhost:11434/api/generate)
+- `MODEL_NAME`: Ollama model name (default: llama3.1:8b-instruct-q4_K_M)
+
 ## Development
 
 ### Running Tests
@@ -113,10 +134,45 @@ The application can be configured using environment variables or a `.env` file. 
 pytest
 ```
 
-### Code Style
-```bash
-black .
-flake8
+### Code Style and Quality
+This project uses automated tools to maintain code quality and consistency:
+
+1. **Code Formatting with Black**
+   ```bash
+   black .
+   ```
+   - Automatically formats Python code
+   - Enforces consistent code style
+   - No configuration needed - it's opinionated and consistent
+
+2. **Code Linting with Flake8**
+   ```bash
+   flake8
+   ```
+   - Checks for programming errors
+   - Enforces Python style guide (PEP 8)
+   - Identifies potential bugs and code complexity issues
+
+Before submitting a pull request, please ensure your code passes both Black formatting and Flake8 linting checks.
+
+### Logging
+- All chatbot interactions are logged in the `logs` directory
+- Log files are created with timestamps
+- Logs include both prompts and responses
+- Unicode characters are properly handled
+
+## Acknowledgments
+
+This project uses the [GeoCLIP](https://github.com/VicenteVivan/geo-clip) framework for image-based location identification. GeoCLIP is a CLIP-inspired model that aligns images with geographical locations, achieving state-of-the-art results on geo-localization tasks. The framework is based on the paper "GeoCLIP: Clip-Inspired Alignment between Locations and Images for Effective Worldwide Geo-localization" by Vivanco, Vicente and Nayak, Gaurav Kumar and Shah, Mubarak, published at NeurIPS 2023.
+
+If you use this project in your research, please cite the original GeoCLIP paper:
+```bibtex
+@inproceedings{geoclip,
+  title={GeoCLIP: Clip-Inspired Alignment between Locations and Images for Effective Worldwide Geo-localization},
+  author={Vivanco, Vicente and Nayak, Gaurav Kumar and Shah, Mubarak},
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2023}
+}
 ```
 
 ## License
