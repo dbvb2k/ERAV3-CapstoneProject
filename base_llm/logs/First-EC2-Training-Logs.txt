@@ -1,0 +1,124 @@
+(pytorch) ubuntu@ip-172-31-6-14:~/data$ accelerate launch train_llama_local.py --output_dir ./my_llama_1b_run --sequence_length 512 --gradient_accumulation_steps 16 --max_train_steps 300 --save_steps 100 --generation_steps 100 --mixed_precision fp16
+05/28/2025 16:43:58 - INFO - __main__ - Distributed environment: DistributedType.NO
+Num processes: 1
+Process index: 0
+Local process index: 0
+Device: cuda
+
+Mixed precision type: fp16
+
+05/28/2025 16:43:58 - INFO - __main__ - Initializing model from scratch...
+Generate config GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2,
+  "use_cache": false
+}
+
+05/28/2025 16:44:13 - INFO - __main__ - Model parameters: 1,279,887,360
+05/28/2025 16:44:13 - INFO - __main__ - Gradient checkpointing enabled.
+05/28/2025 16:44:13 - INFO - __main__ - Loading tokenizer: hf-internal-testing/llama-tokenizer
+tokenizer_config.json: 100%|████████████████████████████████████████████████████| 1.54k/1.54k [00:00<00:00, 14.9MB/s]
+tokenizer.model: 100%|█████████████████████████████████████████████████████████████| 500k/500k [00:00<00:00, 136MB/s]
+tokenizer.json: 100%|███████████████████████████████████████████████████████████| 1.84M/1.84M [00:00<00:00, 2.28MB/s]
+special_tokens_map.json: 100%|██████████████████████████████████████████████████████| 411/411 [00:00<00:00, 5.63MB/s]
+loading file tokenizer.model from cache at /home/ubuntu/.cache/huggingface/hub/models--hf-internal-testing--llama-tokenizer/snapshots/d02ad6cb9dd2c2296a6332199fa2fdca5938fef0/tokenizer.model
+loading file tokenizer.json from cache at /home/ubuntu/.cache/huggingface/hub/models--hf-internal-testing--llama-tokenizer/snapshots/d02ad6cb9dd2c2296a6332199fa2fdca5938fef0/tokenizer.json
+loading file added_tokens.json from cache at None
+loading file special_tokens_map.json from cache at /home/ubuntu/.cache/huggingface/hub/models--hf-internal-testing--llama-tokenizer/snapshots/d02ad6cb9dd2c2296a6332199fa2fdca5938fef0/special_tokens_map.json
+loading file tokenizer_config.json from cache at /home/ubuntu/.cache/huggingface/hub/models--hf-internal-testing--llama-tokenizer/snapshots/d02ad6cb9dd2c2296a6332199fa2fdca5938fef0/tokenizer_config.json
+loading file chat_template.jinja from cache at None
+You are using the default legacy behaviour of the <class 'transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565 - if you loaded a llama tokenizer from a GGUF file you can ignore this message.
+05/28/2025 16:44:17 - INFO - __main__ - Loading dataset: stas/openwebtext-10k
+README.md: 100%|████████████████████████████████████████████████████████████████████| 951/951 [00:00<00:00, 10.8MB/s]
+openwebtext-10k.py: 100%|███████████████████████████████████████████████████████| 3.08k/3.08k [00:00<00:00, 22.2MB/s]
+0000.parquet: 100%|██████████████████████████████████████████████████████████████| 30.3M/30.3M [00:00<00:00, 304MB/s]
+Generating train split: 100%|████████████████████████████████████████| 10000/10000 [00:00<00:00, 23310.81 examples/s]
+Running tokenizer on dataset: 100%|███████████████████████████████████| 10000/10000 [00:06<00:00, 1482.62 examples/s]
+05/28/2025 16:44:28 - INFO - __main__ - Using 8-bit AdamW optimizer.
+05/28/2025 16:44:30 - INFO - __main__ - ***** Running training *****
+05/28/2025 16:44:30 - INFO - __main__ -   Num examples = 10000
+05/28/2025 16:44:30 - INFO - __main__ -   Num Epochs = 1
+05/28/2025 16:44:30 - INFO - __main__ -   Instantaneous batch size per device = 1
+05/28/2025 16:44:30 - INFO - __main__ -   Total train batch size (w. parallel, distributed & accumulation) = 16
+05/28/2025 16:44:30 - INFO - __main__ -   Gradient Accumulation steps = 16
+05/28/2025 16:44:30 - INFO - __main__ -   Total optimization steps = 300
+Epoch 1 Step 100 LR: 2.44e-04 Loss: 7.3659:  33%|███████████▎                      | 100/300 [06:44<13:19,  4.00s/it]05/28/2025 16:51:15 - INFO - __main__ - 
+--- Generating sample at step 100 ---
+The attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+Setting `pad_token_id` to `eos_token_id`:2 for open-end generation.
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+05/28/2025 16:51:21 - INFO - __main__ - Prompt: Once upon a time,
+05/28/2025 16:51:21 - INFO - __main__ - Generated: Once upon a time, the new 1505-138), 3008400-59884-0008001001500000045000
+
+05/28/2025 16:51:21 - INFO - accelerate.accelerator - Saving current state to ./my_llama_1b_run/checkpoint-100
+05/28/2025 16:51:21 - WARNING - accelerate.utils.other - Removed shared tensor {'lm_head.weight'} while saving. This should be OK, but check by verifying that you don't receive any warning while reloading
+05/28/2025 16:51:40 - INFO - accelerate.checkpointing - Model weights saved in my_llama_1b_run/checkpoint-100/model.safetensors
+05/28/2025 16:51:54 - INFO - accelerate.checkpointing - Optimizer state saved in my_llama_1b_run/checkpoint-100/optimizer.bin
+05/28/2025 16:51:54 - INFO - accelerate.checkpointing - Scheduler state saved in my_llama_1b_run/checkpoint-100/scheduler.bin
+05/28/2025 16:51:54 - INFO - accelerate.checkpointing - Sampler state for dataloader 0 saved in my_llama_1b_run/checkpoint-100/sampler.bin
+05/28/2025 16:51:54 - INFO - accelerate.checkpointing - Gradient scaler state saved in my_llama_1b_run/checkpoint-100/scaler.pt
+05/28/2025 16:51:54 - INFO - accelerate.checkpointing - Random states saved in my_llama_1b_run/checkpoint-100/random_states_0.pkl
+Configuration saved in ./my_llama_1b_run/checkpoint-100/config.json
+Configuration saved in ./my_llama_1b_run/checkpoint-100/generation_config.json
+The model is bigger than the maximum size per checkpoint (5GB) and is going to be split in 2 checkpoint shards. You can find where each parameters has been saved in the index located at ./my_llama_1b_run/checkpoint-100/model.safetensors.index.json.
+chat template saved in ./my_llama_1b_run/checkpoint-100/chat_template.jinja
+tokenizer config file saved in ./my_llama_1b_run/checkpoint-100/tokenizer_config.json
+Special tokens file saved in ./my_llama_1b_run/checkpoint-100/special_tokens_map.json
+05/28/2025 16:52:37 - INFO - __main__ - Saved checkpoint to ./my_llama_1b_run/checkpoint-100
+Epoch 1 Step 200 LR: 8.49e-05 Loss: 6.8098:  67%|██████████████████████▋           | 200/300 [14:42<06:39,  3.99s/it]05/28/2025 16:59:13 - INFO - __main__ - 
+--- Generating sample at step 200 ---
+The attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+Setting `pad_token_id` to `eos_token_id`:2 for open-end generation.
+05/28/2025 16:59:14 - INFO - __main__ - Prompt: Once upon a time,
+05/28/2025 16:59:14 - INFO - __main__ - Generated: Once upon a time, a new new game to the best.
+
+“The report is a “end that’s a new-fin and the best, a very way to be to take the best-p's first, and that’s a great
+
+05/28/2025 16:59:14 - INFO - accelerate.accelerator - Saving current state to ./my_llama_1b_run/checkpoint-200
+05/28/2025 16:59:14 - WARNING - accelerate.utils.other - Removed shared tensor {'lm_head.weight'} while saving. This should be OK, but check by verifying that you don't receive any warning while reloading
+05/28/2025 16:59:33 - INFO - accelerate.checkpointing - Model weights saved in my_llama_1b_run/checkpoint-200/model.safetensors
+05/28/2025 16:59:46 - INFO - accelerate.checkpointing - Optimizer state saved in my_llama_1b_run/checkpoint-200/optimizer.bin
+05/28/2025 16:59:46 - INFO - accelerate.checkpointing - Scheduler state saved in my_llama_1b_run/checkpoint-200/scheduler.bin
+05/28/2025 16:59:46 - INFO - accelerate.checkpointing - Sampler state for dataloader 0 saved in my_llama_1b_run/checkpoint-200/sampler.bin
+05/28/2025 16:59:46 - INFO - accelerate.checkpointing - Gradient scaler state saved in my_llama_1b_run/checkpoint-200/scaler.pt
+05/28/2025 16:59:46 - INFO - accelerate.checkpointing - Random states saved in my_llama_1b_run/checkpoint-200/random_states_0.pkl
+Configuration saved in ./my_llama_1b_run/checkpoint-200/config.json
+Configuration saved in ./my_llama_1b_run/checkpoint-200/generation_config.json
+The model is bigger than the maximum size per checkpoint (5GB) and is going to be split in 2 checkpoint shards. You can find where each parameters has been saved in the index located at ./my_llama_1b_run/checkpoint-200/model.safetensors.index.json.
+chat template saved in ./my_llama_1b_run/checkpoint-200/chat_template.jinja
+tokenizer config file saved in ./my_llama_1b_run/checkpoint-200/tokenizer_config.json
+Special tokens file saved in ./my_llama_1b_run/checkpoint-200/special_tokens_map.json
+05/28/2025 17:00:29 - INFO - __main__ - Saved checkpoint to ./my_llama_1b_run/checkpoint-200
+Epoch 1 Step 300 LR: 0.00e+00 Loss: 6.5220: 100%|██████████████████████████████████| 300/300 [22:32<00:00,  3.92s/it]05/28/2025 17:07:02 - INFO - __main__ - 
+--- Generating sample at step 300 ---
+The attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+Setting `pad_token_id` to `eos_token_id`:2 for open-end generation.
+05/28/2025 17:07:04 - INFO - __main__ - Prompt: Once upon a time,
+05/28/2025 17:07:04 - INFO - __main__ - Generated: Once upon a time, I want to have been a lot.
+
+The few months, you can be going to be a way of the state, and the first time in a little time. And you are a little time, so I’ve been in the most
+
+05/28/2025 17:07:04 - INFO - accelerate.accelerator - Saving current state to ./my_llama_1b_run/checkpoint-300
+05/28/2025 17:07:04 - WARNING - accelerate.utils.other - Removed shared tensor {'lm_head.weight'} while saving. This should be OK, but check by verifying that you don't receive any warning while reloading
+05/28/2025 17:07:22 - INFO - accelerate.checkpointing - Model weights saved in my_llama_1b_run/checkpoint-300/model.safetensors
+05/28/2025 17:07:35 - INFO - accelerate.checkpointing - Optimizer state saved in my_llama_1b_run/checkpoint-300/optimizer.bin
+05/28/2025 17:07:35 - INFO - accelerate.checkpointing - Scheduler state saved in my_llama_1b_run/checkpoint-300/scheduler.bin
+05/28/2025 17:07:35 - INFO - accelerate.checkpointing - Sampler state for dataloader 0 saved in my_llama_1b_run/checkpoint-300/sampler.bin
+05/28/2025 17:07:35 - INFO - accelerate.checkpointing - Gradient scaler state saved in my_llama_1b_run/checkpoint-300/scaler.pt
+05/28/2025 17:07:35 - INFO - accelerate.checkpointing - Random states saved in my_llama_1b_run/checkpoint-300/random_states_0.pkl
+Configuration saved in ./my_llama_1b_run/checkpoint-300/config.json
+Configuration saved in ./my_llama_1b_run/checkpoint-300/generation_config.json
+The model is bigger than the maximum size per checkpoint (5GB) and is going to be split in 2 checkpoint shards. You can find where each parameters has been saved in the index located at ./my_llama_1b_run/checkpoint-300/model.safetensors.index.json.
+chat template saved in ./my_llama_1b_run/checkpoint-300/chat_template.jinja
+tokenizer config file saved in ./my_llama_1b_run/checkpoint-300/tokenizer_config.json
+Special tokens file saved in ./my_llama_1b_run/checkpoint-300/special_tokens_map.json
+05/28/2025 17:08:19 - INFO - __main__ - Saved checkpoint to ./my_llama_1b_run/checkpoint-300
+05/28/2025 17:08:19 - INFO - __main__ - Saving final model to ./my_llama_1b_run
+Configuration saved in ./my_llama_1b_run/config.json
+Configuration saved in ./my_llama_1b_run/generation_config.json
+The model is bigger than the maximum size per checkpoint (5GB) and is going to be split in 2 checkpoint shards. You can find where each parameters has been saved in the index located at ./my_llama_1b_run/model.safetensors.index.json.
+chat template saved in ./my_llama_1b_run/chat_template.jinja
+tokenizer config file saved in ./my_llama_1b_run/tokenizer_config.json
+Special tokens file saved in ./my_llama_1b_run/special_tokens_map.json
+05/28/2025 17:08:59 - INFO - __main__ - Training complete.
+Epoch 1 Step 300 LR: 0.00e+00 Loss: 6.5220: 100%|██████████████████████████████████| 300/300 [24:28<00:00,  4.89s/it]
