@@ -7,7 +7,8 @@ import os
 import torch
 import time
 import argparse
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from unsloth import FastLanguageModel
+from transformers import AutoTokenizer
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -16,8 +17,80 @@ load_dotenv()
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Evaluate Llama 3 Travel Assistant Model')
-    parser.add_argument('model_path', type=str, help='Path to the trained model folder')
+    parser.add_argument('--model_path', type=str, required=True,
+                      help='Path to the trained model folder (relative to models directory)')
     return parser.parse_args()
+
+def find_latest_checkpoint(checkpoint_dir):
+    """Find the latest checkpoint folder within the main checkpoint directory"""
+    try:
+        # First check if the directory exists
+        if not os.path.exists(checkpoint_dir):
+            raise FileNotFoundError(f"Checkpoint directory not found: {checkpoint_dir}")
+        
+        print(f"\nChecking checkpoint directory: {checkpoint_dir}")
+        print("Directory contents:")
+        for item in os.listdir(checkpoint_dir):
+            item_path = os.path.join(checkpoint_dir, item)
+            if os.path.isdir(item_path):
+                print(f"Directory: {item}")
+                print("  Contents:")
+                try:
+                    for subitem in os.listdir(item_path):
+                        print(f"    {subitem}")
+                except Exception as e:
+                    print(f"    Error listing contents: {str(e)}")
+            else:
+                print(f"File: {item}")
+        
+        # List all items in the directory
+        items = os.listdir(checkpoint_dir)
+        
+        # Look for checkpoint folders
+        checkpoint_folders = [d for d in items if d.startswith('checkpoint-')]
+        
+        if not checkpoint_folders:
+            # If no checkpoint folders found, check if this is a model directory itself
+            if os.path.exists(os.path.join(checkpoint_dir, "pytorch_model.bin")) or \
+               os.path.exists(os.path.join(checkpoint_dir, "adapter_model.bin")):
+                print(f"Using model directory directly: {checkpoint_dir}")
+                return checkpoint_dir
+            raise ValueError(f"No checkpoint folders or model files found in {checkpoint_dir}")
+        
+        # Extract step numbers and find the latest
+        latest_checkpoint = max(checkpoint_folders, key=lambda x: int(x.split('-')[1]))
+        latest_checkpoint_path = os.path.join(checkpoint_dir, latest_checkpoint)
+        
+        print(f"\nExamining latest checkpoint: {latest_checkpoint}")
+        print("Checkpoint contents:")
+        for item in os.listdir(latest_checkpoint_path):
+            print(f"  {item}")
+        
+        # Check for various possible model file names
+        possible_model_files = [
+            "pytorch_model.bin",
+            "adapter_model.bin",
+            "model.safetensors",
+            "adapter_model.safetensors",
+            "training_args.bin",
+            "optimizer.pt",
+            "scheduler.pt"
+        ]
+        
+        found_files = []
+        for file in possible_model_files:
+            if os.path.exists(os.path.join(latest_checkpoint_path, file)):
+                found_files.append(file)
+        
+        if not found_files:
+            raise ValueError(f"Checkpoint {latest_checkpoint} does not contain any model files")
+        
+        print(f"\nFound model files: {', '.join(found_files)}")
+        return latest_checkpoint_path
+        
+    except Exception as e:
+        print(f"Error finding checkpoint: {str(e)}")
+        raise
 
 def load_model_and_tokenizer(model_path=None):
     """Load either the base model or fine-tuned model"""
@@ -33,27 +106,43 @@ def load_model_and_tokenizer(model_path=None):
             "You can get your token from: https://huggingface.co/settings/tokens"
         )
     
-    # Load tokenizer
+    # Load tokenizer and model
     if model_path:
-        print(f"Loading fine-tuned model from: {model_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
+        # Ensure the model path is within the models directory
+        full_model_path = os.path.join("models", model_path)
+        if not os.path.exists(full_model_path):
+            raise FileNotFoundError(f"Model directory not found: {full_model_path}")
+        
+        # Find the latest checkpoint
+        latest_checkpoint = find_latest_checkpoint(full_model_path)
+        print(f"\nLoading model from latest checkpoint: {latest_checkpoint}")
+            
+        try:
+            model, tokenizer = FastLanguageModel.from_pretrained(
+                model_name=latest_checkpoint,
+                max_seq_length=2048,
+                dtype=torch.float16,
+                load_in_4bit=True
+            )
+        except Exception as e:
+            print(f"Error loading model with Unsloth: {str(e)}")
+            print("Falling back to standard model loading...")
+            tokenizer = AutoTokenizer.from_pretrained(latest_checkpoint)
+            model = FastLanguageModel.from_pretrained(
+                model_name=latest_checkpoint,
+                max_seq_length=2048,
+                dtype=torch.float16,
+                load_in_4bit=True
+            )
     else:
         print("Loading base model: NousResearch/Meta-Llama-3-8B-Instruct")
-        # print("Loading base model: meta-llama/Meta-Llama-3.1-8B-Instruct")
-
         model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
-        #   model_name = "meta-llama/Llama-3.1-8B"  
         
-        tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16,
-            device_map="auto",
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=model_name,
+            max_seq_length=2048,
+            dtype=torch.float16,
+            load_in_4bit=True,
             token=hf_token
         )
     
@@ -159,9 +248,10 @@ def main():
     # Parse command line arguments
     args = parse_arguments()
     
-    # Check if model path exists
-    if not os.path.exists(args.model_path):
-        raise FileNotFoundError(f"Model directory not found: {args.model_path}")
+    # Check if models directory exists
+    if not os.path.exists("models"):
+        print("⚠️  Models directory not found. Creating it...")
+        os.makedirs("models", exist_ok=True)
     
     # Check GPU availability
     if torch.cuda.is_available():
@@ -171,10 +261,6 @@ def main():
         print("⚠️  No GPU detected - evaluation will be slow")
     
     try:
-        # Evaluate base model
-        print("\nEvaluating base model...")
-        evaluate_model()
-        
         # Evaluate fine-tuned model
         print(f"\nEvaluating fine-tuned model: {args.model_path}")
         evaluate_model(args.model_path)
