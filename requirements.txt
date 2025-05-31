@@ -1,1 +1,23 @@
-# Global requirements (if any)
+# Global requirements
+aiohttp>=3.8.0
+python-dateutil>=2.8.2
+requests>=2.28.0
+pydantic>=2.0.0
+
+# AI/NLP
+huggingface-hub>=0.19.0  # For API access
+sentence_transformers>=2.2.0
+
+# Location and Maps
+overpass>=0.7.0  # OpenStreetMap API wrapper
+geopy>=2.3.0
+
+# Weather
+python-weather>=1.0.0  # Free weather API wrapper
+
+# Currency
+forex-python>=1.8  # Free currency conversion
+
+# Utilities
+python-dotenv>=1.0.0
+aiosqlite>=0.19.0  # For local caching
