@@ -1,0 +1,9 @@
+deepspeed
+python_dotenv
+transformers
+datasets
+accelerate
+bitsandbytes
+sentencepiece
+tensorboard
+tqdm
