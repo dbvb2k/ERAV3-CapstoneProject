@@ -202,15 +202,22 @@ def find_latest_checkpoint(checkpoint_dir):
 
 def setup_model_and_tokenizer(checkpoint_path=None):
     """Setup the model and tokenizer using Unsloth"""
-    print("Loading Llama 3 8B Instruct model with Unsloth...")
     
+    USE_BASE_MODEL = True
+
     # Check for CUDA availability
     if not torch.cuda.is_available():
         print("WARNING: CUDA is not available. Training will be very slow on CPU!")
     else:
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
-    
-    model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
+
+    # This flag is used to switch between the base model and the instruct model selection
+    if USE_BASE_MODEL:
+        print("Loading Llama 3 8B Base model with Unsloth...")
+        model_name = "meta-llama/Llama-3.1-8B"
+    else:
+        print("Loading Llama 3 8B Instruct model with Unsloth...")
+        model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
     
     # Get HuggingFace token
     hf_token = os.getenv("HF_TOKEN")

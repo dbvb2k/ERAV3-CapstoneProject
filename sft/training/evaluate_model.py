@@ -94,6 +94,9 @@ def find_latest_checkpoint(checkpoint_dir):
 
 def load_model_and_tokenizer(model_path=None):
     """Load either the base model or fine-tuned model"""
+    
+    USE_BASE_MODEL = True
+
     print("\nLoading model and tokenizer...")
     
     # Get HuggingFace token
@@ -135,8 +138,12 @@ def load_model_and_tokenizer(model_path=None):
                 load_in_4bit=True
             )
     else:
-        print("Loading base model: NousResearch/Meta-Llama-3-8B-Instruct")
-        model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
+        if USE_BASE_MODEL:
+            print("Loading Llama 3 8B Base model with Unsloth: meta-llama/Llama-3.1-8B")
+            model_name = "meta-llama/Llama-3.1-8B"
+        else:
+            print("Loading Llama 3 8B Instruct model with Unsloth: NousResearch/Meta-Llama-3-8B-Instruct")
+            model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
         
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=model_name,
@@ -201,9 +208,6 @@ def generate_response(model, tokenizer, prompt, max_length=2048):
 
 def evaluate_model(model_path=None):
     """Evaluate model performance on sample prompts"""
-    # Load model and tokenizer
-    model, tokenizer = load_model_and_tokenizer(model_path)
-    
     # Sample prompts for evaluation
     test_prompts = [
         "What are the best places to visit in Paris?",
@@ -213,17 +217,20 @@ def evaluate_model(model_path=None):
         "What are some must-try local foods in Thailand?"
     ]
     
-    print("\n=== Model Evaluation ===")
-    print(f"Model: {'Fine-tuned' if model_path else 'Base'} Llama 3 8B")
-    print(f"Device: {model.device}")
-    print(f"Number of parameters: {model.num_parameters():,}")
+    print("\n=== Base Model Evaluation ===")
+    print("Model: Llama 3 8B Base")
+    
+    # Load base model and tokenizer
+    base_model, base_tokenizer = load_model_and_tokenizer(None)
+    print(f"Device: {base_model.device}")
+    print(f"Number of parameters: {base_model.num_parameters():,}")
     
     total_time = 0
-    print("\nGenerating responses for test prompts...")
+    print("\nGenerating responses for test prompts using base model...")
     
     for i, prompt in enumerate(test_prompts, 1):
         print(f"\nPrompt {i}: {prompt}")
-        response, gen_time = generate_response(model, tokenizer, prompt)
+        response, gen_time = generate_response(base_model, base_tokenizer, prompt)
         total_time += gen_time
         
         print(f"Generation time: {gen_time:.2f} seconds")
@@ -233,13 +240,58 @@ def evaluate_model(model_path=None):
         print("-" * 80)
     
     avg_time = total_time / len(test_prompts)
-    print(f"\nAverage generation time: {avg_time:.2f} seconds")
+    print(f"\nAverage generation time for base model: {avg_time:.2f} seconds")
     
-    # Memory usage
+    # Memory usage for base model
     if torch.cuda.is_available():
-        print(f"\nGPU Memory Usage:")
+        print(f"\nGPU Memory Usage (Base Model):")
         print(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.1f} MB")
         print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.1f} MB")
+    
+    # Clear GPU memory
+    del base_model
+    del base_tokenizer
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    # If model path is provided, evaluate the fine-tuned model
+    if model_path:
+        print("\n=== Fine-tuned Model Evaluation ===")
+        print(f"Model: Fine-tuned Llama 3 8B from {model_path}")
+        
+        # Load fine-tuned model and tokenizer
+        ft_model, ft_tokenizer = load_model_and_tokenizer(model_path)
+        print(f"Device: {ft_model.device}")
+        print(f"Number of parameters: {ft_model.num_parameters():,}")
+        
+        total_time = 0
+        print("\nGenerating responses for test prompts using fine-tuned model...")
+        
+        for i, prompt in enumerate(test_prompts, 1):
+            print(f"\nPrompt {i}: {prompt}")
+            response, gen_time = generate_response(ft_model, ft_tokenizer, prompt)
+            total_time += gen_time
+            
+            print(f"Generation time: {gen_time:.2f} seconds")
+            print("\nResponse:")
+            print("-" * 80)
+            print(response)
+            print("-" * 80)
+        
+        avg_time = total_time / len(test_prompts)
+        print(f"\nAverage generation time for fine-tuned model: {avg_time:.2f} seconds")
+        
+        # Memory usage for fine-tuned model
+        if torch.cuda.is_available():
+            print(f"\nGPU Memory Usage (Fine-tuned Model):")
+            print(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.1f} MB")
+            print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.1f} MB")
+        
+        # Clear GPU memory
+        del ft_model
+        del ft_tokenizer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 def main():
     """Main evaluation pipeline"""
@@ -261,8 +313,7 @@ def main():
         print("⚠️  No GPU detected - evaluation will be slow")
     
     try:
-        # Evaluate fine-tuned model
-        print(f"\nEvaluating fine-tuned model: {args.model_path}")
+        # Evaluate both base and fine-tuned models
         evaluate_model(args.model_path)
         
     except Exception as e:
