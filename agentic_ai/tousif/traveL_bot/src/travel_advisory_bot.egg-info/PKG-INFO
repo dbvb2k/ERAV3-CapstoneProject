@@ -1,0 +1,186 @@
+Metadata-Version: 2.4
+Name: travel-advisory-bot
+Version: 0.1.0
+Summary: Agentic AI Travel Advisory Bot with multimodal input support
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: streamlit>=1.29.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: transformers>=4.35.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchvision>=0.15.0
+Requires-Dist: Pillow>=10.0.0
+Requires-Dist: PyPDF2>=3.0.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: langdetect>=1.0.9
+Requires-Dist: googletrans>=4.0.0
+Requires-Dist: opencv-python>=4.8.0
+Requires-Dist: whisper-openai>=20231117
+Requires-Dist: requests>=2.31.0
+Requires-Dist: beautifulsoup4>=4.12.0
+Requires-Dist: folium>=0.15.0
+Requires-Dist: plotly>=5.17.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: aiofiles>=23.2.1
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: pandas>=2.0.0
+
+# Travel Advisory Bot
+
+An intelligent multimodal travel planning application that processes text, PDFs, images, videos, and voice input to create personalized travel recommendations and itineraries.
+
+## Features
+
+- **Multimodal Input Processing**: Support for text, PDF documents, images, videos, and audio files
+- **AI-Powered Recommendations**: Integration with OpenAI, Hugging Face, and Ollama models
+- **Multilingual Support**: Automatic language detection and translation
+- **Interactive Web Interface**: Modern Streamlit-based UI with chat functionality
+- **Smart Travel Planning**: Generate detailed itineraries and travel suggestions
+- **Flexible Architecture**: Modular design with extensible processors and AI models
+
+## Quick Start
+
+### Prerequisites
+- Python 3.8+
+- uv package manager
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd travel-advisory-bot
+```
+
+2. Install dependencies using uv:
+```bash
+uv sync
+```
+
+3. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+4. Run the application:
+```bash
+# Windows
+start.bat
+
+# Linux/Mac
+uv run streamlit run main.py
+```
+
+## Configuration
+
+Create a `.env` file with the following variables:
+
+```env
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-3.5-turbo
+
+# Hugging Face Configuration
+HUGGINGFACE_API_KEY=your_hf_api_key_here
+HUGGINGFACE_MODEL=microsoft/DialoGPT-medium
+
+# Ollama Configuration (optional)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama2
+
+# General Settings
+DEFAULT_AI_MODEL=openai
+DEFAULT_LANGUAGE=en
+DEBUG=false
+```
+
+## Usage
+
+### Web Interface
+1. Start the application using `start.bat` or `uv run streamlit run main.py`
+2. Open your browser to `http://localhost:8501`
+3. Use the different tabs:
+   - **Travel Suggestions**: Get AI-powered travel recommendations
+   - **Itinerary Planning**: Create detailed travel itineraries
+   - **Chat Interface**: Interactive conversation with the travel bot
+
+### Input Types Supported
+- **Text**: Direct text input for travel queries
+- **PDF**: Upload travel documents, guides, or itineraries
+- **Images**: Upload photos of destinations or travel documents
+- **Video**: Upload travel videos for content analysis
+- **Audio**: Upload voice recordings with travel preferences
+
+## Architecture
+
+```
+travel-advisory-bot/
+├── src/travel_bot/
+│   ├── models/          # Data models and AI implementations
+│   ├── processors/      # Input type processors
+│   ├── agents/          # Travel planning agents
+│   ├── utils/           # Utility functions
+│   └── ui/              # Streamlit interface
+├── config/              # Configuration management
+├── tests/               # Test scripts
+└── main.py             # Application entry point
+```
+
+## Development
+
+### Running Tests
+```bash
+# Basic functionality test
+uv run python simple_test.py
+
+# Demo with sample data
+uv run python test_app.py
+```
+
+### Adding New AI Models
+1. Implement the `AIModel` interface in `src/travel_bot/models/ai_models.py`
+2. Add model configuration to settings
+3. Register the model in the `ModelFactory`
+
+### Adding New Input Processors
+1. Implement the `InputProcessor` interface in `src/travel_bot/processors/`
+2. Register the processor in the `ProcessorFactory`
+
+## API Keys Setup
+
+### OpenAI
+1. Sign up at https://platform.openai.com/
+2. Generate an API key
+3. Add to `.env` file
+
+### Hugging Face
+1. Sign up at https://huggingface.co/
+2. Generate an access token
+3. Add to `.env` file
+
+### Ollama (Optional)
+1. Install Ollama locally
+2. Pull desired models: `ollama pull llama2`
+3. Ensure service is running
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Support
+
+For issues and questions:
+- Create an issue on GitHub
+- Check the documentation
+- Review the test scripts for usage examples
