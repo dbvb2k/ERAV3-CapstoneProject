@@ -15,9 +15,8 @@ class Config:
     WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
     
     # Model Configuration
-    DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-3.5-turbo")
-    HUGGINGFACE_MODEL = os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-medium")
-    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "microsoft/phi-2")
+    HUGGINGFACE_MODEL = os.getenv("HUGGINGFACE_MODEL", "microsoft/phi-2")
     
     # Application Settings
     MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
@@ -53,5 +52,4 @@ class Config:
         if cls.OPENAI_API_KEY:
             models.extend(["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"])
         models.append("huggingface/" + cls.HUGGINGFACE_MODEL)
-        models.append("ollama/llama2")
         return models

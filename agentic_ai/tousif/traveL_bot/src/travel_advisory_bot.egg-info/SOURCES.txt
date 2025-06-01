@@ -6,11 +6,14 @@ src/travel_advisory_bot.egg-info/dependency_links.txt
 src/travel_advisory_bot.egg-info/requires.txt
 src/travel_advisory_bot.egg-info/top_level.txt
 src/travel_bot/__init__.py
+src/travel_bot/chatbot_app.py
 src/travel_bot/travel_bot.py
 src/travel_bot/agents/__init__.py
 src/travel_bot/agents/travel_agent.py
 src/travel_bot/models/__init__.py
 src/travel_bot/models/ai_models.py
+src/travel_bot/models/base_classes.py
+src/travel_bot/models/data_models.py
 src/travel_bot/processors/__init__.py
 src/travel_bot/processors/audio_processor.py
 src/travel_bot/processors/image_processor.py

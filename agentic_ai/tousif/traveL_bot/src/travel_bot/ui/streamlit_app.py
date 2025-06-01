@@ -4,17 +4,38 @@ import os
 from typing import Optional
 import sys
 import traceback
+import nest_asyncio
+
+# Enable nested event loops
+nest_asyncio.apply()
 
 # Add the project root and src directory to the Python path
-current_dir = os.path.dirname(__file__)
-project_root = os.path.join(current_dir, '..', '..', '..')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..', '..', '..'))
 src_dir = os.path.join(project_root, 'src')
-sys.path.insert(0, project_root)
-sys.path.insert(0, src_dir)
 
-from travel_bot.travel_bot import TravelBot
-from travel_bot.models import InputType, TravelPreferences
-from config.settings import Config
+# Ensure the paths exist before adding them
+if os.path.exists(project_root):
+    sys.path.insert(0, project_root)
+if os.path.exists(src_dir):
+    sys.path.insert(0, src_dir)
+
+try:
+    from travel_bot.travel_bot import TravelBot
+    from travel_bot.models import InputType, TravelPreferences
+    from config.settings import Config
+except ImportError as e:
+    st.error(f"""Failed to import required modules. Please check your installation.
+Error: {str(e)}
+Current paths:
+- Project root: {project_root}
+- Src directory: {src_dir}
+""")
+    st.stop()
+
+# Create event loop for async operations
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 class StreamlitTravelApp:
     """Streamlit interface for the Travel Advisory Bot"""
@@ -48,10 +69,33 @@ class StreamlitTravelApp:
         """Initialize travel bot with selected model"""
         try:
             if st.session_state.travel_bot is None:
-                st.session_state.travel_bot = TravelBot(model_type)
+                with st.spinner("Initializing AI model..."):
+                    st.session_state.travel_bot = TravelBot(model_type)
+                    
+                    # Check if model is properly loaded
+                    if not st.session_state.travel_bot.model.is_available():
+                        st.error("""
+                        ❌ Failed to initialize the AI model. This could be due to:
+                        1. Missing dependencies (try: pip install -e .)
+                        2. Memory constraints
+                        3. Model download issues
+                        
+                        Please check the terminal output for detailed error messages.
+                        """)
+                        return None
+                    else:
+                        st.success("✅ AI model initialized successfully!")
+                        
             return st.session_state.travel_bot
         except Exception as e:
-            st.error(f"Failed to initialize Travel Bot: {str(e)}")
+            st.error(f"""
+            ❌ Error initializing Travel Bot: {str(e)}
+            
+            Please try:
+            1. Refreshing the page
+            2. Checking your internet connection
+            3. Running: pip install -e .
+            """)
             return None
     
     def render_sidebar(self):
