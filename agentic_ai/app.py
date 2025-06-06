@@ -15,6 +15,7 @@ from tools.travel_utils import TravelUtils
 from workflows.travel_workflow import TravelWorkflow
 from tools.travel_tools import get_cached_pipeline
 import json
+import traceback
 
 # Enable nested asyncio for Streamlit
 nest_asyncio.apply()
@@ -102,58 +103,71 @@ if mode == "Get Travel Suggestions":
     
     if st.button("Get Suggestions"):
         with st.spinner("Generating travel suggestions..."):
-            # Create processed input
-            processed_input = ProcessedInput(
-                content=travel_input,
-                extracted_entities={"duration": "1 week"}
-            )
-            
-            # Get suggestions
-            suggestions = asyncio.run(
-                workflow.execute_smart_planning_workflow(processed_input, preferences)
-            )
-            
-            # Display suggestions
-            for i, suggestion in enumerate(suggestions, 1):
-                with st.expander(f"Suggestion {i}: {suggestion.destination}"):
-                    # Add a debug print to see what we're getting
-                    print(f"\nDisplaying suggestion {i}:")
-                    print(f"Type: {type(suggestion)}")
-                    print(f"Content: {suggestion.__dict__}")
+            try:
+                # Create processed input
+                processed_input = ProcessedInput(
+                    content=travel_input,
+                    extracted_entities={"duration": "1 week"}
+                )
+                
+                # Get suggestions
+                suggestions = asyncio.run(
+                    workflow.execute_smart_planning_workflow(processed_input, preferences)
+                )
+                
+                # Debug print
+                print(f"\nNumber of suggestions received: {len(suggestions) if suggestions else 0}")
+                
+                # Display suggestions
+                if suggestions:
+                    st.success(f"Found {len(suggestions)} travel suggestions for you!")
                     
-                    st.write(f"**Description:** {suggestion.description}")
-                    st.write(f"**Best Time to Visit:** {suggestion.best_time_to_visit}")
-                    st.write(f"**Estimated Budget:** {suggestion.estimated_budget}")
-                    st.write(f"**Recommended Duration:** {suggestion.duration} days")
+                    for i, suggestion in enumerate(suggestions, 1):
+                        # Debug print
+                        print(f"\nDisplaying suggestion {i}:")
+                        print(f"Type: {type(suggestion)}")
+                        print(f"Content: {suggestion.__dict__}")
+                        
+                        with st.expander(f"Suggestion {i}: {suggestion.destination}"):
+                            st.write(f"**Description:** {suggestion.description}")
+                            st.write(f"**Best Time to Visit:** {suggestion.best_time_to_visit}")
+                            st.write(f"**Estimated Budget:** {suggestion.estimated_budget}")
+                            st.write(f"**Recommended Duration:** {suggestion.duration} days")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("**Top Activities:**")
+                                activities = suggestion.activities if isinstance(suggestion.activities, list) else []
+                                for activity in activities:
+                                    st.write(f"- {activity}")
+                            
+                            with col2:
+                                st.write("**Accommodation Options:**")
+                                accommodations = suggestion.accommodation_suggestions if isinstance(suggestion.accommodation_suggestions, list) else []
+                                for acc in accommodations:
+                                    st.write(f"- {acc}")
+                            
+                            st.write("**Transportation Options:**")
+                            transportation = suggestion.transportation if isinstance(suggestion.transportation, list) else []
+                            for transport in transportation:
+                                st.write(f"- {transport}")
+                            
+                            st.write("**Local Tips:**")
+                            tips = suggestion.local_tips if isinstance(suggestion.local_tips, list) else []
+                            for tip in tips:
+                                st.write(f"- {tip}")
+                            
+                            col3, col4 = st.columns(2)
+                            with col3:
+                                st.write(f"**Weather Info:** {suggestion.weather_info}")
+                            with col4:
+                                st.write(f"**Safety Info:** {suggestion.safety_info}")
+                else:
+                    st.error("No suggestions were generated. Please try again with different preferences.")
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Top Activities:**")
-                        activities = suggestion.activities if isinstance(suggestion.activities, list) else []
-                        for activity in activities:
-                            st.write(f"- {activity}")
-                    
-                    with col2:
-                        st.write("**Accommodation Options:**")
-                        accommodations = suggestion.accommodation_suggestions if isinstance(suggestion.accommodation_suggestions, list) else []
-                        for acc in accommodations:
-                            st.write(f"- {acc}")
-                    
-                    st.write("**Transportation Options:**")
-                    transportation = suggestion.transportation if isinstance(suggestion.transportation, list) else []
-                    for transport in transportation:
-                        st.write(f"- {transport}")
-                    
-                    st.write("**Local Tips:**")
-                    tips = suggestion.local_tips if isinstance(suggestion.local_tips, list) else []
-                    for tip in tips:
-                        st.write(f"- {tip}")
-                    
-                    col3, col4 = st.columns(2)
-                    with col3:
-                        st.write(f"**Weather Info:** {suggestion.weather_info}")
-                    with col4:
-                        st.write(f"**Safety Info:** {suggestion.safety_info}")
+            except Exception as e:
+                st.error(f"An error occurred while generating suggestions: {str(e)}")
+                print(f"Error details: {traceback.format_exc()}")
 
 else:  # Create Detailed Itinerary
     st.header("📝 Create Detailed Itinerary")

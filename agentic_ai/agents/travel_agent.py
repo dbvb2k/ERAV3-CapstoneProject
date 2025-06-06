@@ -302,6 +302,84 @@ class SmartTravelAgent(TravelAgent):
         super().__init__(config={})
         self.model_type = model_type
     
+    def _validate_suggestion_data(self, data: Dict, duration: int) -> Dict:
+        """Validate and clean suggestion data"""
+        # Extract destination
+        destination = data.get("destination", "Unknown")
+        if destination == "Unknown" and data.get("name"):
+            destination = f"{data['name']}, {data.get('country', 'Location Unknown')}"
+        
+        # Extract description
+        description = data.get("description", "")
+        if not description and data.get("Description"):
+            description = data["Description"]
+        
+        # Parse duration
+        try:
+            duration_val = int(''.join(c for c in str(data.get("duration", duration)) if c.isdigit()) or str(duration))
+        except (ValueError, TypeError):
+            duration_val = duration
+        
+        # Extract or generate activities
+        activities = data.get("activities", [])
+        if isinstance(activities, str):
+            activities = [activities]
+        if not activities and data.get("activitySuggestions"):
+            if isinstance(data["activitySuggestions"], list):
+                activities = data["activitySuggestions"]
+            elif isinstance(data["activitySuggestions"], dict):
+                activities = [item["title"] for item in data["activitySuggestions"].get("options", [])]
+        activities = activities[:5] or ["Local exploration", "Cultural activities", "Food experiences", "Nature exploration", "Local markets"]
+        
+        # Extract or generate accommodations
+        accommodations = data.get("accommodation_suggestions", [])
+        if isinstance(accommodations, str):
+            accommodations = [accommodations]
+        if not accommodations and data.get("accommodations"):
+            if isinstance(data["accommodations"], list):
+                accommodations = [acc.get("name", "Hotel") for acc in data["accommodations"]]
+            elif isinstance(data["accommodations"], dict):
+                accommodations = [data["accommodations"].get("name", "Hotel")]
+        accommodations = accommodations[:3] or ["Recommended hotels", "Local guesthouses", "Budget options"]
+        
+        # Extract or generate transportation
+        transportation = data.get("transportation", [])
+        if isinstance(transportation, str):
+            transportation = [transportation]
+        if not transportation and data.get("transportInformation"):
+            if isinstance(data["transportInformation"], dict):
+                for mode, info in data["transportInformation"].items():
+                    if isinstance(info, list):
+                        transportation.extend([f"{mode}: {route.get('routeName', 'Local route')}" for route in info])
+                    else:
+                        transportation.append(f"{mode}: Local routes available")
+        transportation = transportation[:2] or ["Public transportation", "Walking tours"]
+        
+        # Extract or generate local tips
+        local_tips = data.get("local_tips", [])
+        if isinstance(local_tips, str):
+            local_tips = [local_tips]
+        if not local_tips and data.get("localTips"):
+            if isinstance(data["localTips"], list):
+                local_tips = data["localTips"]
+            elif isinstance(data["localTips"], dict):
+                local_tips = [tip["text"] for tip in data["localTips"].get("tips", [])]
+        local_tips = local_tips[:3] or ["Research local customs", "Learn basic phrases", "Follow local guidelines"]
+        
+        return {
+            "destination": destination,
+            "description": description,
+            "best_time_to_visit": data.get("best_time_to_visit", "Check local seasons"),
+            "estimated_budget": data.get("estimated_budget", "Varies based on preferences"),
+            "duration": str(duration_val),
+            "activities": activities,
+            "accommodation_suggestions": accommodations,
+            "transportation": transportation,
+            "local_tips": local_tips,
+            "weather_info": data.get("weather_info", "Check local weather conditions"),
+            "safety_info": data.get("safety_info", "Follow standard travel precautions")
+        }
+
     async def create_suggestions(self, 
                                processed_input: ProcessedInput,
                                preferences: TravelPreferences) -> List[TravelSuggestion]:
@@ -315,7 +393,6 @@ class SmartTravelAgent(TravelAgent):
         # Parse duration from input
         try:
             duration_str = processed_input.extracted_entities.get('duration', '5 days')
-            # Extract first number from the duration string
             duration = int(''.join(c for c in duration_str if c.isdigit()) or '5')
         except (ValueError, TypeError):
             duration = 5
@@ -323,7 +400,7 @@ class SmartTravelAgent(TravelAgent):
         # Create context from input and preferences
         context = self._build_context(processed_input, preferences)
         
-        prompt = f"""You are a travel expert. Create 3 detailed travel suggestions for the following request.
+        prompt = f"""You are a travel expert. Create 2 detailed travel suggestions for the following request.
 
 Input: {processed_input.content}
 Duration: {duration} days
@@ -347,56 +424,43 @@ Requirements:
 7. Include specific prices and details for all suggestions
 8. Each suggestion should be exactly {duration} days
 
-Return exactly 3 destinations in a JSON array with detailed, specific information for each field."""
-        
-        response = await self.itinerary_planner.execute(
-            location="multiple",
-            duration=duration,  # Pass the specific duration
-            preferences={"prompt": prompt, "context": context}
-        )
+Return exactly 2 destinations in a JSON array with detailed, specific information for each field."""
         
         try:
+            response = await self.itinerary_planner.execute(
+                location="multiple",
+                duration=duration,
+                preferences={"prompt": prompt, "context": context}
+            )
+            
             suggestions = []
             
             # Handle both list and dict responses
             if isinstance(response, dict):
                 response = [response]
+            elif not isinstance(response, list):
+                response = []
             
             for data in response:
                 if isinstance(data, dict):
                     # Validate and clean the data
-                    destination = data.get("destination", "Unknown")
-                    if destination == "Unknown" and data.get("name"):
-                        destination = f"{data['name']}, {data.get('country', 'Location Unknown')}"
-                    
-                    description = data.get("description", "")
-                    if not description and data.get("Description"):
-                        description = data["Description"]
-                    
-                    # Parse duration to ensure it's a number
-                    try:
-                        duration_val = int(''.join(c for c in str(data.get("duration", duration)) if c.isdigit()) or str(duration))
-                    except (ValueError, TypeError):
-                        duration_val = duration
+                    validated_data = self._validate_suggestion_data(data, duration)
                     
                     # Create suggestion with validated data
-                    suggestion = TravelSuggestion(
-                        destination=destination,
-                        description=description,
-                        best_time_to_visit=data.get("best_time_to_visit", "Check local seasons"),
-                        estimated_budget=data.get("estimated_budget", "Varies based on preferences"),
-                        duration=str(duration_val),  # Use the parsed duration
-                        activities=data.get("activities", [])[:5] or ["Local exploration", "Cultural activities", "Food experiences", "Nature exploration", "Local markets"],
-                        accommodation_suggestions=data.get("accommodation_suggestions", [])[:3] or ["Recommended hotels", "Local guesthouses", "Budget options"],
-                        transportation=data.get("transportation", [])[:2] or ["Public transportation", "Walking tours"],
-                        local_tips=data.get("local_tips", [])[:3] or ["Research local customs", "Learn basic phrases", "Follow local guidelines"],
-                        weather_info=data.get("weather_info", "Check local weather conditions"),
-                        safety_info=data.get("safety_info", "Follow standard travel precautions")
-                    )
+                    suggestion = TravelSuggestion(**validated_data)
                     suggestions.append(suggestion)
             
+            # Ensure we have exactly 2 suggestions
+            while len(suggestions) < 2:
+                suggestions.append(self._create_fallback_suggestion(
+                    f"Alternative Destination {len(suggestions) + 1}",
+                    preferences,
+                    duration
+                ))
+            
+            # Print processed suggestions for debugging
             print("\n=== Processed Suggestions ===")
-            for i, sugg in enumerate(suggestions, 1):
+            for i, sugg in enumerate(suggestions[:2], 1):
                 print(f"\nSuggestion {i}:")
                 print(f"Destination: {sugg.destination}")
                 print(f"Description: {sugg.description}")
@@ -410,19 +474,15 @@ Return exactly 3 destinations in a JSON array with detailed, specific informatio
                 print(f"Weather: {sugg.weather_info}")
                 print(f"Safety: {sugg.safety_info}")
             
-            # Ensure we have exactly 3 suggestions
-            while len(suggestions) < 3:
-                suggestions.append(self._create_fallback_suggestion(
-                    f"Alternative Destination {len(suggestions) + 1}",
-                    preferences,
-                    duration
-                ))
-            
-            return suggestions[:3]  # Return exactly 3 suggestions
+            return suggestions[:2]  # Return exactly 2 suggestions
             
         except Exception as e:
             print(f"\nError processing suggestions: {str(e)}")
-            return [self._create_fallback_suggestion("Error processing travel suggestions", preferences, duration)]
+            # Create two fallback suggestions in case of error
+            return [
+                self._create_fallback_suggestion(f"US Travel Destination {i+1}", preferences, duration)
+                for i in range(2)  # Changed from 3 to 2
+            ]
     
     def _create_fallback_suggestion(self, text: str, preferences: TravelPreferences, duration: int = 5) -> TravelSuggestion:
         """Create a fallback suggestion with preference-aware defaults"""

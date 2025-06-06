@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import streamlit as st
+import re
 
 class BaseTravelTool(ABC):
     def __init__(self, api_key: str = None):
@@ -235,7 +236,7 @@ class ItineraryPlannerTool(BaseTravelTool):
             context = preferences.get("context", "")
             
             # Create a more structured system prompt with example
-            system_prompt = """You are a travel expert AI assistant. Generate exactly 3 travel suggestions in this JSON format:
+            system_prompt = """You are a travel expert AI assistant. Generate exactly 2 travel suggestions in this JSON format:
 
 [
     {
@@ -271,7 +272,7 @@ class ItineraryPlannerTool(BaseTravelTool):
 ]
 
 IMPORTANT RULES:
-1. Return EXACTLY 3 destinations in a JSON array
+1. Return EXACTLY 2 destinations in a JSON array
 2. Follow the EXACT format shown above
 3. Use SPECIFIC numbers, names, and prices
 4. Duration MUST be a specific number
@@ -280,7 +281,7 @@ IMPORTANT RULES:
 7. Stay within the specified budget range
 8. NO placeholder or generic content
 
-Your response must be a valid JSON array containing exactly 3 complete destination objects."""
+Your response must be a valid JSON array containing exactly 2 complete destination objects."""
 
             # Combine system prompt with user prompt
             prompt = f"{system_prompt}\n\nUser Request:\n{base_prompt}"
@@ -351,53 +352,84 @@ Your response must be a valid JSON array containing exactly 3 complete destinati
 
             # Try to extract and parse JSON
             try:
-                # Find the first [ and last ]
-                start_idx = result.find('[')
-                end_idx = result.rfind(']')
-                
-                if start_idx == -1 or end_idx == -1:
-                    print("\n=== No JSON array found, creating from text ===")
-                    # Try to create JSON from the text response
-                    lines = result.split('\n')
-                    suggestions = []
-                    current_suggestion = {}
+                # First try to find JSON in markdown code blocks
+                json_matches = re.findall(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', result)
+                if json_matches:
+                    json_str = json_matches[0]
+                else:
+                    # Find the first [ and last ]
+                    start_idx = result.find('[')
+                    end_idx = result.rfind(']')
                     
-                    for line in lines:
-                        line = line.strip()
-                        if line.startswith('"destination"') or line.startswith('destination'):
+                    if start_idx == -1 or end_idx == -1:
+                        print("\n=== No JSON array found, trying to parse structured text ===")
+                        # Try to parse structured text response
+                        suggestions = []
+                        current_suggestion = {}
+                        
+                        # Split by numbered sections or clear delimiters
+                        sections = re.split(r'(?:\d+[\)\.:]|Suggestion \d+:|\n\n+)', result)
+                        
+                        for section in sections:
+                            if not section.strip():
+                                continue
+                                
+                            lines = section.strip().split('\n')
+                            for line in lines:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                
+                                # Try to match key-value pairs
+                                if ':' in line:
+                                    key, value = line.split(':', 1)
+                                    key = key.strip().lower().replace(' ', '_')
+                                    value = value.strip()
+                                    
+                                    # Handle lists
+                                    if key in ['activities', 'accommodation_suggestions', 'transportation', 'local_tips']:
+                                        if '[' in value and ']' in value:
+                                            value = [v.strip().strip('"') for v in value.strip('[]').split(',')]
+                                        else:
+                                            value = [value]
+                                    
+                                    current_suggestion[key] = value
+                            
                             if current_suggestion:
                                 suggestions.append(current_suggestion)
                                 current_suggestion = {}
-                            current_suggestion['destination'] = line.split(':')[-1].strip().strip('"').strip()
-                        elif ':' in line:
-                            key, value = line.split(':', 1)
-                            key = key.strip().strip('"')
-                            value = value.strip().strip(',').strip().strip('"')
-                            if key in ['activities', 'accommodation_suggestions', 'transportation', 'local_tips']:
-                                value = [v.strip().strip('"') for v in value.strip('[]').split(',')]
-                            current_suggestion[key] = value
+                        
+                        if suggestions:
+                            return self._validate_suggestions(suggestions)
+                        
+                        raise ValueError("Could not parse suggestions from text")
                     
-                    if current_suggestion:
-                        suggestions.append(current_suggestion)
-                    
-                    if suggestions:
-                        return self._validate_suggestions(suggestions)
-                    raise ValueError("Could not parse suggestions from text")
+                    json_str = result[start_idx:end_idx + 1]
                 
-                json_str = result[start_idx:end_idx + 1]
-                
-                # Clean up common formatting issues
+                # Clean up the JSON string
+                json_str = re.sub(r'```.*?```', '', json_str, flags=re.DOTALL)  # Remove any remaining markdown
                 json_str = json_str.replace('\n', ' ')
-                json_str = json_str.replace('```', '')
-                json_str = json_str.replace('json', '')
-                json_str = json_str.replace('JSON', '')
+                json_str = re.sub(r'\\[rnt]', ' ', json_str)  # Remove escape sequences
+                json_str = re.sub(r'\s+', ' ', json_str)  # Normalize whitespace
+                json_str = re.sub(r',\s*([}\]])', r'\1', json_str)  # Remove trailing commas
+                json_str = re.sub(r'"\s*:\s*"([^"]*?)"', r'": "\1"', json_str)  # Fix spacing around colons
                 
-                # Try to parse the JSON
-                parsed_data = json.loads(json_str)
-                return self._validate_suggestions(parsed_data if isinstance(parsed_data, list) else [parsed_data])
+                try:
+                    # Try parsing with json
+                    parsed_data = json.loads(json_str)
+                except json.JSONDecodeError:
+                    # If that fails, try ast.literal_eval as it's more forgiving
+                    import ast
+                    parsed_data = ast.literal_eval(json_str)
                 
-            except (json.JSONDecodeError, ValueError) as e:
+                if not isinstance(parsed_data, list):
+                    parsed_data = [parsed_data]
+                
+                return self._validate_suggestions(parsed_data)
+                
+            except Exception as e:
                 print(f"\n=== Error parsing response: {str(e)} ===")
+                print("Raw response:", result)
                 return self._create_fallback_suggestions()
                 
         except Exception as e:
@@ -449,8 +481,8 @@ Your response must be a valid JSON array containing exactly 3 complete destinati
                 }
                 validated_data.append(validated_suggestion)
         
-        # Ensure exactly 3 suggestions
-        while len(validated_data) < 3:
+        # Ensure exactly 2 suggestions
+        while len(validated_data) < 2:
             validated_data.append({
                 "destination": f"Alternative Destination {len(validated_data) + 1}",
                 "description": "A great destination matching your preferences.",
@@ -482,12 +514,12 @@ Your response must be a valid JSON array containing exactly 3 complete destinati
                 "safety_info": "Follow standard travel precautions"
             })
         
-        return validated_data[:3]
+        return validated_data[:2]  # Return exactly 2 suggestions
 
     def _create_fallback_suggestions(self) -> List[Dict]:
-        """Create three fallback suggestions"""
+        """Create two fallback suggestions"""
         suggestions = []
-        for i in range(3):
+        for i in range(2):  # Changed from 3 to 2
             suggestions.append({
                 "destination": f"Suggested Destination {i + 1}",
                 "description": "A carefully selected destination matching your preferences.",
