@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 import pandas as pd
-from ..models import TravelSuggestion, Itinerary
+from agents.travel_agent import TravelSuggestion, Itinerary
 
 # Optional imports with fallbacks
 try:
@@ -219,4 +219,4 @@ class TravelUtils:
             "luxury": "High-end accommodations, fine dining, and premium experiences",
             "family": "Kid-friendly activities, safe environments, and family accommodations",
             "romantic": "Intimate settings, couples activities, and romantic dining"
-        }
+        } 

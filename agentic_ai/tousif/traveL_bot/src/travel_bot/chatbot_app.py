@@ -2,20 +2,40 @@ from typing import Dict, Any, Optional
 import logging
 import re
 import time
+import asyncio
+import nest_asyncio
 from .models import AIModel, ModelFactory
 from .processors import ProcessorFactory, ProcessedInput, InputType
 
+# Apply nest_asyncio to allow nested event loops
+nest_asyncio.apply()
+
 def setup_logging():
     """Configure logging for the chatbot"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('chatbot.log')
-        ]
-    )
-    return logging.getLogger(__name__)
+    # Create a custom formatter for better visibility
+    class VisibleFormatter(logging.Formatter):
+        def format(self, record):
+            if record.levelname == 'INFO':
+                # Add visual separators for better readability
+                if "Query:" in str(record.msg):
+                    return "\n" + "="*50 + f"\n📝 {record.msg}\n" + "="*50
+                elif "Response:" in str(record.msg):
+                    return "\n" + "="*50 + f"\n✨ {record.msg}\n" + "="*50
+            return super().format(record)
+
+    # Configure root logger
+    logging.basicConfig(level=logging.INFO)
+    
+    # Create console handler with better formatting
+    console = logging.StreamHandler()
+    console.setFormatter(VisibleFormatter('%(message)s'))
+    
+    # Get logger and update handlers
+    logger = logging.getLogger(__name__)
+    logger.handlers = []
+    logger.addHandler(console)
+    
+    return logger
 
 # Initialize logger
 logger = setup_logging()
@@ -24,28 +44,16 @@ class TravelBot:
     """Travel Advisory Chatbot powered by AI models"""
     
     def __init__(self, model_type: str = "huggingface"):
-        print(f"🔄 Initializing TravelBot with {model_type} model...")
-        start_time = time.time()
-        
+        print(f"\n🔄 Initializing TravelBot with {model_type} model...")
         self.model = ModelFactory.create_model(model_type)
         self.processor_factory = ProcessorFactory()
-        self.logger = setup_logging()
-        
-        # Log model initialization
-        if self.model.is_available():
-            init_time = time.time() - start_time
-            print(f"✅ Initialized with {model_type} model successfully (took {init_time:.2f}s)")
-            self.logger.info(f"Model {model_type} initialized in {init_time:.2f}s")
-        else:
-            print(f"⚠️ {model_type} model initialization failed")
-            self.logger.warning(f"{model_type} model initialization failed")
+        self.logger = logger
         
     async def process_message(self, message: str, context: Optional[str] = None) -> str:
         """Process user message and generate response"""
         try:
-            # Log user input
-            print(f"👤 User: {message}")
-            self.logger.info(f"Processing user message: {message}")
+            # Log user input with clear formatting
+            self.logger.info(f"Query: {message}")
             start_time = time.time()
             
             # Process the input
@@ -62,19 +70,16 @@ class TravelBot:
                 context = f"Planning for {num_days} days."
             
             # Generate response
-            print("🤔 Generating response...")
             response = await self._generate_travel_response(processed_input, context)
             
-            # Log completion time
+            # Log completion time and response
             process_time = time.time() - start_time
-            print(f"✅ Response generated in {process_time:.2f}s")
-            print(f"🤖 Assistant: {response}")
+            self.logger.info(f"Response generated in {process_time:.2f}s:\n{response}")
             
             return response
             
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"
-            print(f"❌ {error_msg}")
             self.logger.error(error_msg)
             return error_msg
     

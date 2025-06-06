@@ -65,7 +65,7 @@ class StreamlitTravelApp:
         if 'current_itinerary' not in st.session_state:
             st.session_state.current_itinerary = None
     
-    def initialize_travel_bot(self, model_type: str = "devstral"):
+    def initialize_travel_bot(self, model_type: str = "huggingface"):
         """Initialize travel bot with selected model"""
         try:
             if st.session_state.travel_bot is None:

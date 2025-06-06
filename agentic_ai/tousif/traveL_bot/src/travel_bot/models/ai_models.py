@@ -272,6 +272,11 @@ class HuggingFaceLocalModel(AIModel):
             return "Local HuggingFace model not available. Please ensure transformers library is installed."
         
         try:
+            # Log the incoming request
+            print("\n" + "="*50)
+            print("📝 Received Query:", prompt)
+            print("="*50)
+            
             travel_context = """You are a knowledgeable travel advisor. Your goal is to provide helpful, accurate, and detailed travel information and recommendations.
 Focus on:
 - Destination insights and local attractions
@@ -287,27 +292,40 @@ Please provide specific, actionable advice."""
                 full_prompt += f"Context: {context}\n"
             full_prompt += f"Query: {prompt}\nResponse:"
             
-            # Generate response using the pipeline with CPU-friendly settings
+            # Generate response using the pipeline with optimized settings
+            print("🤔 Generating response...")
+            start_time = time.time()
+            
             outputs = self.pipeline(
                 full_prompt,
-                max_new_tokens=512,
+                max_new_tokens=256,  # Reduced for faster responses
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
                 num_return_sequences=1,
                 pad_token_id=self.tokenizer.pad_token_id,
-                use_cache=True  # Enable KV-cache for faster generation
+                use_cache=True,  # Enable KV-cache
+                repetition_penalty=1.1,
+                no_repeat_ngram_size=3  # Prevent repetition
             )
             
-            # Extract the generated text
+            # Extract and clean the response
             response = outputs[0]['generated_text']
-            # Remove the prompt from the response
             response = response[len(full_prompt):].strip()
+            
+            # Log the response and timing
+            gen_time = time.time() - start_time
+            print("\n" + "="*50)
+            print(f"✨ Generated Response ({gen_time:.2f}s):")
+            print(response)
+            print("="*50 + "\n")
             
             return response if response else "Unable to generate response with local model."
             
         except Exception as e:
-            return f"Error with local model: {str(e)}"
+            error_msg = f"Error with local model: {str(e)}"
+            print(f"❌ {error_msg}")
+            return error_msg
     
     async def analyze_input(self, processed_input: ProcessedInput) -> Dict[str, Any]:
         """Analyze input using local HuggingFace model"""

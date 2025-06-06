@@ -1,8 +1,9 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
-from ..tools.travel_tools import ItineraryPlannerTool
+from tools.travel_tools import ItineraryPlannerTool
 import aiohttp
+import json
 
 @dataclass
 class TravelRequest:
@@ -15,6 +16,35 @@ class TravelRequest:
     budget: Optional[float] = None
 
 @dataclass
+class TravelPreferences:
+    budget_range: Optional[str] = None
+    travel_style: Optional[str] = None
+    interests: Optional[List[str]] = None
+    group_size: int = 1
+    language_preference: str = "en"
+    dietary_restrictions: Optional[List[str]] = None
+    accommodation_type: Optional[str] = None
+
+@dataclass
+class TravelSuggestion:
+    destination: str
+    description: str
+    best_time_to_visit: str
+    estimated_budget: str
+    duration: str
+    activities: List[str]
+    accommodation_suggestions: List[str]
+    transportation: List[str]
+    local_tips: List[str]
+    weather_info: str
+    safety_info: str
+
+@dataclass
+class ProcessedInput:
+    content: str
+    extracted_entities: Dict[str, Any]
+
+@dataclass
 class Itinerary:
     travel_request: TravelRequest
     flights: List[Dict]
@@ -22,6 +52,15 @@ class Itinerary:
     activities: List[Dict]
     total_cost: float
     created_at: datetime = datetime.now()
+    destination: Optional[str] = None
+    total_days: Optional[int] = None
+    total_budget: Optional[str] = None
+    daily_plans: Optional[List[Dict]] = None
+    accommodation_details: Optional[List[Dict]] = None
+    transportation_details: Optional[List[Dict]] = None
+    emergency_contacts: Optional[List[Dict]] = None
+    packing_list: Optional[List[str]] = None
+    important_notes: Optional[List[str]] = None
 
 class TravelAgent:
     def __init__(self, config: Dict):
@@ -30,8 +69,7 @@ class TravelAgent:
         
         # Initialize tools
         self.itinerary_planner = config.get('tools', {}).get('itinerary_planner') or ItineraryPlannerTool(
-            hf_api_key=config.get('huggingface_api_key'),
-            model_id="google/flan-t5-large"
+            model_id="microsoft/phi-2"
         )
         
     async def plan_trip(self, travel_request: TravelRequest) -> Itinerary:
@@ -253,6 +291,307 @@ class TravelAgent:
         """
         flight_cost = sum(float(str(flight.get('price', '0')).replace('$', '').replace(',', '')) for flight in flights)
         hotel_cost = sum(float(str(hotel.get('price', '0')).replace('$', '').replace(',', '')) for hotel in hotels)
-        activity_cost = sum(activity.get('estimated_cost', 0) for activity in activities)
+        activity_cost = sum(float(str(activity.get('price', '0')).replace('$', '').replace(',', '')) for activity in activities)
         
-        return flight_cost + hotel_cost + activity_cost 
+        return flight_cost + hotel_cost + activity_cost
+
+class SmartTravelAgent(TravelAgent):
+    """Intelligent travel agent that creates suggestions and itineraries"""
+    
+    def __init__(self, model_type: str = "devstral"):
+        super().__init__(config={})
+        self.model_type = model_type
+    
+    async def create_suggestions(self, 
+                               processed_input: ProcessedInput,
+                               preferences: TravelPreferences) -> List[TravelSuggestion]:
+        """Create travel suggestions based on input and preferences"""
+        
+        print("\n=== User Input ===")
+        print(f"Input text: {processed_input.content}")
+        print(f"Extracted entities: {processed_input.extracted_entities}")
+        print(f"Preferences: {preferences}")
+        
+        # Parse duration from input
+        try:
+            duration_str = processed_input.extracted_entities.get('duration', '5 days')
+            # Extract first number from the duration string
+            duration = int(''.join(c for c in duration_str if c.isdigit()) or '5')
+        except (ValueError, TypeError):
+            duration = 5
+        
+        # Create context from input and preferences
+        context = self._build_context(processed_input, preferences)
+        
+        prompt = f"""You are a travel expert. Create 3 detailed travel suggestions for the following request.
+
+Input: {processed_input.content}
+Duration: {duration} days
+
+Preferences:
+- Budget Level: {preferences.budget_range}
+- Travel Style: {preferences.travel_style}
+- Interests: {', '.join(preferences.interests or [])}
+- Group Size: {preferences.group_size}
+- Language: {preferences.language_preference}
+- Dietary Restrictions: {', '.join(preferences.dietary_restrictions or [])}
+- Accommodation Type: {preferences.accommodation_type}
+
+Requirements:
+1. Each destination must be suitable for {preferences.travel_style} travelers
+2. All suggestions must fit within {preferences.budget_range} budget level
+3. Accommodate dietary restrictions: {', '.join(preferences.dietary_restrictions or ['None specified'])}
+4. Consider group size of {preferences.group_size} people
+5. Focus on destinations that match interests: {', '.join(preferences.interests or [])}
+6. Suggest specific accommodations that match {preferences.accommodation_type} preference
+7. Include specific prices and details for all suggestions
+8. Each suggestion should be exactly {duration} days
+
+Return exactly 3 destinations in a JSON array with detailed, specific information for each field."""
+        
+        response = await self.itinerary_planner.execute(
+            location="multiple",
+            duration=duration,  # Pass the specific duration
+            preferences={"prompt": prompt, "context": context}
+        )
+        
+        try:
+            suggestions = []
+            
+            # Handle both list and dict responses
+            if isinstance(response, dict):
+                response = [response]
+            
+            for data in response:
+                if isinstance(data, dict):
+                    # Validate and clean the data
+                    destination = data.get("destination", "Unknown")
+                    if destination == "Unknown" and data.get("name"):
+                        destination = f"{data['name']}, {data.get('country', 'Location Unknown')}"
+                    
+                    description = data.get("description", "")
+                    if not description and data.get("Description"):
+                        description = data["Description"]
+                    
+                    # Parse duration to ensure it's a number
+                    try:
+                        duration_val = int(''.join(c for c in str(data.get("duration", duration)) if c.isdigit()) or str(duration))
+                    except (ValueError, TypeError):
+                        duration_val = duration
+                    
+                    # Create suggestion with validated data
+                    suggestion = TravelSuggestion(
+                        destination=destination,
+                        description=description,
+                        best_time_to_visit=data.get("best_time_to_visit", "Check local seasons"),
+                        estimated_budget=data.get("estimated_budget", "Varies based on preferences"),
+                        duration=str(duration_val),  # Use the parsed duration
+                        activities=data.get("activities", [])[:5] or ["Local exploration", "Cultural activities", "Food experiences", "Nature exploration", "Local markets"],
+                        accommodation_suggestions=data.get("accommodation_suggestions", [])[:3] or ["Recommended hotels", "Local guesthouses", "Budget options"],
+                        transportation=data.get("transportation", [])[:2] or ["Public transportation", "Walking tours"],
+                        local_tips=data.get("local_tips", [])[:3] or ["Research local customs", "Learn basic phrases", "Follow local guidelines"],
+                        weather_info=data.get("weather_info", "Check local weather conditions"),
+                        safety_info=data.get("safety_info", "Follow standard travel precautions")
+                    )
+                    suggestions.append(suggestion)
+            
+            print("\n=== Processed Suggestions ===")
+            for i, sugg in enumerate(suggestions, 1):
+                print(f"\nSuggestion {i}:")
+                print(f"Destination: {sugg.destination}")
+                print(f"Description: {sugg.description}")
+                print(f"Best Time: {sugg.best_time_to_visit}")
+                print(f"Budget: {sugg.estimated_budget}")
+                print(f"Duration: {sugg.duration} days")
+                print(f"Activities: {', '.join(sugg.activities)}")
+                print(f"Accommodations: {', '.join(sugg.accommodation_suggestions)}")
+                print(f"Transportation: {', '.join(sugg.transportation)}")
+                print(f"Local Tips: {', '.join(sugg.local_tips)}")
+                print(f"Weather: {sugg.weather_info}")
+                print(f"Safety: {sugg.safety_info}")
+            
+            # Ensure we have exactly 3 suggestions
+            while len(suggestions) < 3:
+                suggestions.append(self._create_fallback_suggestion(
+                    f"Alternative Destination {len(suggestions) + 1}",
+                    preferences,
+                    duration
+                ))
+            
+            return suggestions[:3]  # Return exactly 3 suggestions
+            
+        except Exception as e:
+            print(f"\nError processing suggestions: {str(e)}")
+            return [self._create_fallback_suggestion("Error processing travel suggestions", preferences, duration)]
+    
+    def _create_fallback_suggestion(self, text: str, preferences: TravelPreferences, duration: int = 5) -> TravelSuggestion:
+        """Create a fallback suggestion with preference-aware defaults"""
+        
+        # Ensure we have valid lists for all list fields
+        activities = [
+            f"{preferences.travel_style.title()} activities in the area",
+            "Local cultural experiences",
+            "Food experiences suitable for your dietary needs",
+            "Nature and outdoor activities",
+            "Local market exploration"
+        ] if preferences.travel_style else [
+            "Local cultural experiences",
+            "Traditional food tasting",
+            "Historical site visits",
+            "Nature exploration",
+            "Local market tours"
+        ]
+        
+        accommodation_type = preferences.accommodation_type or "Hotel"
+        accommodation_suggestions = [
+            f"{accommodation_type} in central location",
+            f"Budget-friendly {accommodation_type.lower()}",
+            "Local guesthouses with good reviews"
+        ]
+        
+        transportation = [
+            "Public transportation with route guidance",
+            "Walking tours in safe areas"
+        ]
+        
+        dietary_restrictions = preferences.dietary_restrictions or []
+        local_tips = [
+            f"Find {'-'.join(dietary_restrictions or ['local'])} friendly restaurants",
+            "Learn basic local phrases",
+            "Research local customs and traditions"
+        ]
+        
+        return TravelSuggestion(
+            destination=text,
+            description=f"A destination selected to match your {preferences.travel_style or 'preferred'} travel style and {preferences.budget_range or 'moderate'} budget.",
+            best_time_to_visit="Please check seasonal information",
+            estimated_budget=f"Within {preferences.budget_range or 'moderate'} range",
+            duration=str(duration),
+            activities=activities,
+            accommodation_suggestions=accommodation_suggestions,
+            transportation=transportation,
+            local_tips=local_tips,
+            weather_info="Research current weather patterns",
+            safety_info="Follow standard travel safety guidelines"
+        )
+    
+    async def create_itinerary(self,
+                             destination: str,
+                             days: int,
+                             preferences: TravelPreferences) -> Itinerary:
+        """Create detailed itinerary for specific destination"""
+        
+        prompt = f"""
+        Create a detailed {days}-day itinerary for {destination} with the following preferences:
+        
+        - Budget: {preferences.budget_range or 'Moderate'}
+        - Travel Style: {preferences.travel_style or 'Balanced'}
+        - Interests: {', '.join(preferences.interests or [])}
+        - Group Size: {preferences.group_size}
+        - Dietary Restrictions: {', '.join(preferences.dietary_restrictions or [])}
+        - Accommodation Type: {preferences.accommodation_type or 'Hotel'}
+        """
+        
+        response = await self.itinerary_planner.execute(
+            location=destination,
+            duration=days,
+            preferences={"prompt": prompt}
+        )
+        
+        try:
+            itinerary_data = json.loads(response)
+            
+            return Itinerary(
+                travel_request=TravelRequest(
+                    origin="",  # To be filled by caller
+                    destination=destination,
+                    start_date=datetime.now(),  # To be filled by caller
+                    end_date=datetime.now(),  # To be filled by caller
+                    num_travelers=preferences.group_size,
+                    preferences=preferences.__dict__,
+                    budget=None  # To be calculated
+                ),
+                flights=[],  # To be filled by caller
+                hotels=[],  # To be filled by caller
+                activities=[],  # Will be filled from daily plans
+                total_cost=0,  # To be calculated
+                destination=itinerary_data.get("destination", destination),
+                total_days=itinerary_data.get("total_days", days),
+                total_budget=itinerary_data.get("total_budget"),
+                daily_plans=itinerary_data.get("daily_plans", []),
+                accommodation_details=itinerary_data.get("accommodation_details", []),
+                transportation_details=itinerary_data.get("transportation_details", []),
+                emergency_contacts=itinerary_data.get("emergency_contacts", []),
+                packing_list=itinerary_data.get("packing_list", []),
+                important_notes=itinerary_data.get("important_notes", [])
+            )
+            
+        except json.JSONDecodeError:
+            # Fallback itinerary
+            daily_plans = []
+            for day in range(1, days + 1):
+                daily_plans.append({
+                    "day": day,
+                    "date": f"Day {day}",
+                    "morning": "Explore local attractions",
+                    "afternoon": "Cultural activities or sightseeing",
+                    "evening": "Dinner and relaxation",
+                    "meals": ["Local breakfast", "Local lunch", "Local dinner"],
+                    "estimated_cost": "50-100 USD"
+                })
+            
+            return Itinerary(
+                travel_request=TravelRequest(
+                    origin="",
+                    destination=destination,
+                    start_date=datetime.now(),
+                    end_date=datetime.now(),
+                    num_travelers=preferences.group_size,
+                    preferences=preferences.__dict__,
+                    budget=None
+                ),
+                flights=[],
+                hotels=[],
+                activities=[],
+                total_cost=0,
+                destination=destination,
+                total_days=days,
+                total_budget="Varies based on preferences",
+                daily_plans=daily_plans,
+                accommodation_details=[{
+                    "name": "Recommended accommodation",
+                    "type": "Hotel",
+                    "location": "City center",
+                    "price_range": "100-200 USD/night",
+                    "amenities": ["WiFi", "Breakfast", "AC"]
+                }],
+                transportation_details=[{
+                    "type": "Local transport",
+                    "details": "Use public transportation or walking",
+                    "cost": "10-20 USD/day"
+                }],
+                emergency_contacts=[{
+                    "service": "Emergency Services",
+                    "number": "Check local emergency numbers"
+                }],
+                packing_list=["Comfortable shoes", "Weather-appropriate clothing", "Travel documents", "Camera", "Medications"],
+                important_notes=["Check visa requirements", "Research local customs", "Keep copies of important documents"]
+            )
+    
+    def _build_context(self, processed_input: ProcessedInput, preferences: TravelPreferences) -> str:
+        """Build context string for AI model"""
+        context = f"""
+        You are a professional travel advisor with expertise in creating personalized travel experiences.
+        You have access to comprehensive knowledge about destinations worldwide, including:
+        - Cultural attractions and activities
+        - Accommodation options across all budgets
+        - Transportation methods and costs
+        - Local customs and etiquette
+        - Safety considerations
+        - Weather patterns
+        - Budget planning
+        
+        Always provide practical, actionable advice while being sensitive to cultural differences.
+        Consider the user's language preference: {preferences.language_preference}
+        """
+        return context 
