@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Llama 3 8B Travel Assistant Fine-tuning with Unsloth Acceleration
+Llama 3 8B Travel Assistant Fine-tuning with Multi-GPU Support
 """
 
 import os
@@ -79,10 +79,12 @@ class InferenceCallback(TrainerCallback):
 
 def parse_arguments():
     """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description='Train Llama 3 Travel Assistant Model with Unsloth')
+    parser = argparse.ArgumentParser(description='Train Llama 3 Travel Assistant Model with Multi-GPU Support')
     parser.add_argument('--epochs', type=int, default=1, help='Number of training epochs (default: 1)')
     parser.add_argument('--checkpoint', type=str, help='Path to checkpoint folder to resume training from')
     parser.add_argument('--inference_steps', type=int, default=100, help='Perform inference every N steps (default: 100)')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch size per GPU (default: 2)')
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=16, help='Number of gradient accumulation steps (default: 16)')
     return parser.parse_args()
 
 def load_and_prepare_data(train_path, val_path):
@@ -205,11 +207,15 @@ def setup_model_and_tokenizer(checkpoint_path=None):
     
     USE_BASE_MODEL = True
 
-    # Check for CUDA availability
+    # Check for CUDA availability and print GPU information
     if not torch.cuda.is_available():
         print("WARNING: CUDA is not available. Training will be very slow on CPU!")
     else:
-        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+        num_gpus = torch.cuda.device_count()
+        print(f"Found {num_gpus} GPU(s):")
+        for i in range(num_gpus):
+            print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+        print(f"Using {num_gpus} GPU(s) for training")
 
     # This flag is used to switch between the base model and the instruct model selection
     if USE_BASE_MODEL:
@@ -343,9 +349,9 @@ def tokenize_function(examples, tokenizer):
         return_tensors="pt"
     )
 
-def train_model(model, tokenizer, train_dataset, val_dataset, num_epochs=1, inference_steps=100, checkpoint_path=None):
-    """Train the model using Unsloth optimizations"""
-    print("Starting training with Unsloth...")
+def train_model(model, tokenizer, train_dataset, val_dataset, num_epochs=1, inference_steps=100, checkpoint_path=None, batch_size=2, gradient_accumulation_steps=16):
+    """Train the model using Unsloth optimizations with multi-GPU support"""
+    print("Starting training with Unsloth and multi-GPU support...")
     
     # Create models directory if it doesn't exist
     os.makedirs("models", exist_ok=True)
@@ -378,8 +384,6 @@ def train_model(model, tokenizer, train_dataset, val_dataset, num_epochs=1, infe
     )
     
     # Calculate total steps based on dataset size and batch size
-    batch_size = 2  # per_device_train_batch_size
-    gradient_accumulation_steps = 16
     num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
     effective_batch_size = batch_size * gradient_accumulation_steps * num_gpus
     total_steps = (len(train_dataset) * num_epochs) // effective_batch_size
@@ -403,7 +407,7 @@ def train_model(model, tokenizer, train_dataset, val_dataset, num_epochs=1, infe
             print(f"Remaining steps to train: {remaining_steps}")
             total_steps = remaining_steps
     
-    # Training arguments optimized for Unsloth
+    # Training arguments optimized for Unsloth and multi-GPU
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=batch_size,
@@ -427,7 +431,11 @@ def train_model(model, tokenizer, train_dataset, val_dataset, num_epochs=1, infe
         # Add resume training parameters
         resume_from_checkpoint=latest_checkpoint if checkpoint_path else None,
         ignore_data_skip=True,  # Important for resuming training
-        max_steps=total_steps
+        max_steps=total_steps,
+        # Multi-GPU specific settings
+        ddp_find_unused_parameters=False,
+        ddp_backend="nccl",
+        local_rank=int(os.environ.get("LOCAL_RANK", -1))
     )
     
     # Create inference callback
@@ -462,7 +470,7 @@ def train_model(model, tokenizer, train_dataset, val_dataset, num_epochs=1, infe
 
 def main():
     """Main training pipeline"""
-    print("=== Llama 3 8B Travel Assistant (Unsloth Accelerated) ===")
+    print("=== Llama 3 8B Travel Assistant (Multi-GPU Training) ===")
     
     # Parse command line arguments
     args = parse_arguments()
@@ -492,7 +500,9 @@ def main():
             val_dataset, 
             args.epochs,
             args.inference_steps,
-            args.checkpoint
+            args.checkpoint,
+            args.batch_size,
+            args.gradient_accumulation_steps
         )
         
         print("\n=== Training Complete! ===")
