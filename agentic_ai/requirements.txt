@@ -18,3 +18,4 @@ python-weather>=1.0.0
 forex-python>=1.8.0
 overpass>=0.7.0
 geopy>=2.3.0 
+logging

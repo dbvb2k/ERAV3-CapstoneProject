@@ -16,6 +16,8 @@ import json
 import os
 import streamlit as st
 import re
+import traceback
+from .travel_utils import logger
 
 class BaseTravelTool(ABC):
     def __init__(self, api_key: str = None):
@@ -28,41 +30,72 @@ class BaseTravelTool(ABC):
 class FlightSearchTool(BaseTravelTool):
     async def execute(self, origin: str, destination: str, date: datetime) -> List[Dict]:
         """
-        Search for flights using Travelpayouts API through RapidAPI (free tier).
+        Search for flights using Fly Scraper API through RapidAPI.
         """
         async with aiohttp.ClientSession() as session:
             headers = {
                 'X-RapidAPI-Key': self.api_key,
-                'X-RapidAPI-Host': 'travelpayouts-travelpayouts-flight-data-v1.p.rapidapi.com'
+                'X-RapidAPI-Host': 'fly-scraper.p.rapidapi.com'
             }
             
-            # Format date as YYYY-MM
-            month = date.strftime('%Y-%m')
+            # Convert city names to SkyID format (e.g., "Paris" -> "PARI")
+            origin_sky_id = self._convert_to_sky_id(origin)
+            destination_sky_id = self._convert_to_sky_id(destination)
             
-            url = f"https://travelpayouts-travelpayouts-flight-data-v1.p.rapidapi.com/v1/prices/calendar"
+            url = "https://fly-scraper.p.rapidapi.com/flights/search-one-way"
             params = {
-                'calendar_type': 'departure_date',
-                'destination': destination,
-                'origin': origin,
-                'month': month,
+                'originSkyId': origin_sky_id,
+                'destinationSkyId': destination_sky_id,
+                'date': date.strftime('%Y-%m-%d')
             }
             
-            async with session.get(url, headers=headers, params=params) as response:
-                data = await response.json()
-                flights = []
-                
-                if data.get('success') and data.get('data'):
-                    for date_str, flight_data in data['data'].items():
-                        flights.append({
-                            'date': date_str,
-                            'price': flight_data.get('price'),
-                            'airline': flight_data.get('airline'),
-                            'flight_number': flight_data.get('flight_number'),
-                            'departure': origin,
-                            'arrival': destination
-                        })
-                
-                return flights
+            try:
+                async with session.get(url, headers=headers, params=params) as response:
+                    if response.status != 200:
+                        logger.log_error(Exception(f"API call failed with status {response.status}"), "FlightSearchTool")
+                        return []
+                    
+                    data = await response.json()
+                    flights = []
+                    
+                    # Parse the response and format flights
+                    if data.get('data', {}).get('flights'):
+                        for flight_data in data['data']['flights']:
+                            flight = {
+                                'date': date.strftime('%Y-%m-%d'),
+                                'price': flight_data.get('price', {}).get('amount'),
+                                'airline': flight_data.get('airline', {}).get('name'),
+                                'flight_number': flight_data.get('flightNumber'),
+                                'departure': origin,
+                                'arrival': destination,
+                                'departure_time': flight_data.get('departureTime'),
+                                'arrival_time': flight_data.get('arrivalTime'),
+                                'duration': flight_data.get('duration'),
+                                'stops': flight_data.get('stops', 0)
+                            }
+                            flights.append(flight)
+                    
+                    return flights
+            except Exception as e:
+                logger.log_error(e, "FlightSearchTool")
+                return []
+    
+    def _convert_to_sky_id(self, city: str) -> str:
+        """
+        Convert city name to SkyID format.
+        This is a simple implementation - in a production environment, 
+        you would want to use a proper city-to-airport code mapping.
+        """
+        # Remove common words and special characters
+        clean_city = city.upper()
+        for word in ['CITY', 'INTERNATIONAL', 'AIRPORT', ',', '.']:
+            clean_city = clean_city.replace(word, '')
+        
+        # Take first 4 letters, pad with 'X' if needed
+        sky_id = clean_city.strip()[:4]
+        sky_id = sky_id.ljust(4, 'X')
+        
+        return sky_id
 
 class HotelSearchTool(BaseTravelTool):
     async def execute(self, location: str, check_in: datetime, check_out: datetime) -> List[Dict]:
@@ -222,20 +255,19 @@ def get_cached_pipeline(model_id: str = "microsoft/phi-2"):
         return None
 
 class ItineraryPlannerTool(BaseTravelTool):
-    def __init__(self, model_id: str = "microsoft/phi-2"):
-        super().__init__()
-        self.model_id = model_id
-        self.pipe = get_cached_pipeline(model_id)
-
+    """Tool for planning itineraries using AI"""
+    
+    def __init__(self, openrouter_api_key: str = None, site_url: str = None, site_name: str = None):
+        """Initialize the tool with OpenRouter API configuration"""
+        self.api_key = openrouter_api_key
+        self.site_url = site_url or "http://localhost:8501"
+        self.site_name = site_name or "AI Travel Planner"
+        self.model = "meta-llama/llama-3.3-8b-instruct:free"
+        
     async def execute(self, location: str, duration: int, preferences: Dict) -> List[Dict]:
-        """
-        Create an itinerary using AI model.
-        """
-        if preferences.get("prompt"):
-            base_prompt = preferences["prompt"]
-            context = preferences.get("context", "")
-            
-            # Create a more structured system prompt with example
+        """Execute the planning tool"""
+        try:
+            # Create a more structured system prompt
             system_prompt = """You are a travel expert AI assistant. Generate exactly 2 travel suggestions in this JSON format:
 
 [
@@ -269,173 +301,102 @@ class ItineraryPlannerTool(BaseTravelTool):
         "weather_info": "Tropical climate with temperatures between 25-35°C year-round",
         "safety_info": "Generally safe for tourists. Be careful of scams near major attractions."
     }
-]
-
-IMPORTANT RULES:
-1. Return EXACTLY 2 destinations in a JSON array
-2. Follow the EXACT format shown above
-3. Use SPECIFIC numbers, names, and prices
-4. Duration MUST be a specific number
-5. Include DETAILED activities with locations
-6. Consider dietary restrictions and accessibility
-7. Stay within the specified budget range
-8. NO placeholder or generic content
-
-Your response must be a valid JSON array containing exactly 2 complete destination objects."""
-
-            # Combine system prompt with user prompt
-            prompt = f"{system_prompt}\n\nUser Request:\n{base_prompt}"
-
-        try:
-            if not self.pipe:
-                raise RuntimeError("Pipeline is not initialized")
-
-            print("\n=== Generating Response with Model ===")
+]"""
             
-            # First try with standard parameters
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: self.pipe(
-                    prompt,
-                    max_length=2048,
-                    max_new_tokens=1500,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9,
-                    top_k=50,
-                    num_return_sequences=1,
-                    truncation=True,
-                    pad_token_id=self.pipe.tokenizer.eos_token_id,
-                    repetition_penalty=1.2,
-                    length_penalty=1.0
-                )[0]["generated_text"]
-            )
-
-            # Clean up the response
-            if result.startswith(prompt):
-                result = result[len(prompt):].strip()
-
-            print("\n=== Raw Model Output ===")
-            print(result)
-
-            # If no output or invalid, try again with different parameters
-            if not result or result.isspace():
-                print("\n=== Retrying with adjusted parameters ===")
-                result = await loop.run_in_executor(
-                    None,
-                    lambda: self.pipe(
-                        prompt,
-                        max_length=1024,  # Reduced length
-                        max_new_tokens=800,  # Reduced tokens
-                        do_sample=True,
-                        temperature=0.8,  # Slightly higher temperature
-                        top_p=0.95,
-                        top_k=100,  # Increased top_k
-                        num_return_sequences=1,
-                        truncation=True,
-                        pad_token_id=self.pipe.tokenizer.eos_token_id,
-                        repetition_penalty=1.1  # Reduced repetition penalty
-                    )[0]["generated_text"]
-                )
-                
-                if result.startswith(prompt):
-                    result = result[len(prompt):].strip()
-                
-                print("\n=== Second Attempt Output ===")
-                print(result)
-
-            # If still no valid output, use fallback
-            if not result or result.isspace():
-                print("\n=== Using fallback suggestions ===")
-                return self._create_fallback_suggestions()
-
-            # Try to extract and parse JSON
-            try:
-                # First try to find JSON in markdown code blocks
-                json_matches = re.findall(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', result)
-                if json_matches:
-                    json_str = json_matches[0]
-                else:
-                    # Find the first [ and last ]
-                    start_idx = result.find('[')
-                    end_idx = result.rfind(']')
+            # Prepare the prompt from preferences
+            prompt = preferences.get('prompt', '')
+            context = preferences.get('context', '')
+            
+            # Combine prompt and context
+            full_prompt = f"{context}\n\n{prompt}" if context else prompt
+            
+            logger.log_info("Sending Request to LLM", {
+                "system_prompt": system_prompt,
+                "user_prompt": full_prompt,
+                "location": location,
+                "duration": duration
+            })
+            
+            # Prepare API request
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": self.site_url,
+                "X-Title": self.site_name
+            }
+            
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": system_prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": full_prompt
+                    }
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+            
+            logger.log_api_request("OpenRouter Chat Completions", payload)
+            
+            # Make API call
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.log_error(Exception(f"API call failed: {error_text}"), "OpenRouter API Call")
+                        raise Exception(f"API call failed with status {response.status}: {error_text}")
                     
-                    if start_idx == -1 or end_idx == -1:
-                        print("\n=== No JSON array found, trying to parse structured text ===")
-                        # Try to parse structured text response
-                        suggestions = []
-                        current_suggestion = {}
-                        
-                        # Split by numbered sections or clear delimiters
-                        sections = re.split(r'(?:\d+[\)\.:]|Suggestion \d+:|\n\n+)', result)
-                        
-                        for section in sections:
-                            if not section.strip():
-                                continue
-                                
-                            lines = section.strip().split('\n')
-                            for line in lines:
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                
-                                # Try to match key-value pairs
-                                if ':' in line:
-                                    key, value = line.split(':', 1)
-                                    key = key.strip().lower().replace(' ', '_')
-                                    value = value.strip()
-                                    
-                                    # Handle lists
-                                    if key in ['activities', 'accommodation_suggestions', 'transportation', 'local_tips']:
-                                        if '[' in value and ']' in value:
-                                            value = [v.strip().strip('"') for v in value.strip('[]').split(',')]
-                                        else:
-                                            value = [value]
-                                    
-                                    current_suggestion[key] = value
-                            
-                            if current_suggestion:
-                                suggestions.append(current_suggestion)
-                                current_suggestion = {}
-                        
-                        if suggestions:
-                            return self._validate_suggestions(suggestions)
-                        
-                        raise ValueError("Could not parse suggestions from text")
+                    result = await response.json()
+                    logger.log_api_response("OpenRouter Chat Completions", result)
                     
-                    json_str = result[start_idx:end_idx + 1]
-                
-                # Clean up the JSON string
-                json_str = re.sub(r'```.*?```', '', json_str, flags=re.DOTALL)  # Remove any remaining markdown
-                json_str = json_str.replace('\n', ' ')
-                json_str = re.sub(r'\\[rnt]', ' ', json_str)  # Remove escape sequences
-                json_str = re.sub(r'\s+', ' ', json_str)  # Normalize whitespace
-                json_str = re.sub(r',\s*([}\]])', r'\1', json_str)  # Remove trailing commas
-                json_str = re.sub(r'"\s*:\s*"([^"]*?)"', r'": "\1"', json_str)  # Fix spacing around colons
-                
-                try:
-                    # Try parsing with json
-                    parsed_data = json.loads(json_str)
-                except json.JSONDecodeError:
-                    # If that fails, try ast.literal_eval as it's more forgiving
-                    import ast
-                    parsed_data = ast.literal_eval(json_str)
-                
-                if not isinstance(parsed_data, list):
-                    parsed_data = [parsed_data]
-                
-                return self._validate_suggestions(parsed_data)
-                
-            except Exception as e:
-                print(f"\n=== Error parsing response: {str(e)} ===")
-                print("Raw response:", result)
-                return self._create_fallback_suggestions()
-                
+                    # Extract the response text
+                    if not result.get('choices'):
+                        raise ValueError("No response choices found in API result")
+                    
+                    response_text = result['choices'][0]['message']['content']
+                    logger.log_info("Extracted Response Text", {"text": response_text})
+                    
+                    # Parse the response
+                    try:
+                        # Try to parse as JSON first
+                        suggestions = json.loads(response_text)
+                        if isinstance(suggestions, list):
+                            validated = self._validate_suggestions(suggestions)
+                            logger.log_info("Successfully parsed JSON response", {"suggestions": validated})
+                            return validated
+                        elif isinstance(suggestions, dict):
+                            validated = self._validate_suggestions([suggestions])
+                            logger.log_info("Successfully parsed single suggestion", {"suggestions": validated})
+                            return validated
+                    except json.JSONDecodeError:
+                        logger.log_warning("JSON parse failed, attempting structured text parse")
+                        # If not JSON, try to parse structured text
+                        return self._parse_structured_text(response_text)
+            
         except Exception as e:
-            print(f"\nError in ItineraryPlannerTool: {str(e)}")
-            return self._create_fallback_suggestions()
-    
+            logger.log_error(e, "ItineraryPlannerTool.execute")
+            # Return a basic suggestion as fallback
+            fallback = [{
+                "destination": location if location != "multiple" else "Popular Destination",
+                "description": "A fascinating destination worth exploring.",
+                "duration": str(duration),
+                "activities": ["Local sightseeing", "Cultural experiences"],
+                "accommodation_suggestions": ["Local hotels"],
+                "transportation": ["Public transport"],
+                "local_tips": ["Research local customs"]
+            }]
+            logger.log_info("Using fallback suggestion", {"fallback": fallback})
+            return fallback
+
     def _validate_suggestions(self, suggestions: List[Dict]) -> List[Dict]:
         """Validate and fix suggestions to ensure they meet requirements"""
         validated_data = []
@@ -516,38 +477,44 @@ Your response must be a valid JSON array containing exactly 2 complete destinati
         
         return validated_data[:2]  # Return exactly 2 suggestions
 
-    def _create_fallback_suggestions(self) -> List[Dict]:
-        """Create two fallback suggestions"""
+    def _parse_structured_text(self, text: str) -> List[Dict]:
+        """Parse structured text response"""
         suggestions = []
-        for i in range(2):  # Changed from 3 to 2
-            suggestions.append({
-                "destination": f"Suggested Destination {i + 1}",
-                "description": "A carefully selected destination matching your preferences.",
-                "best_time_to_visit": "Please check seasonal information",
-                "estimated_budget": "Within your specified budget range",
-                "duration": "5",  # Use a specific number
-                "activities": [
-                    "Local cultural experiences",
-                    "Traditional food tasting",
-                    "Historical site visits",
-                    "Nature exploration",
-                    "Local market tours"
-                ],
-                "accommodation_suggestions": [
-                    "Comfortable hotels in city center",
-                    "Local guesthouses with good reviews",
-                    "Boutique hotels with local charm"
-                ],
-                "transportation": [
-                    "Efficient public transportation",
-                    "Walking tours in historic areas"
-                ],
-                "local_tips": [
-                    "Learn basic local phrases",
-                    "Respect local customs and traditions",
-                    "Try local specialties at recommended restaurants"
-                ],
-                "weather_info": "Research current weather patterns",
-                "safety_info": "Follow standard travel safety guidelines"
-            })
-        return suggestions
+        current_suggestion = {}
+        
+        # Split by numbered sections or clear delimiters
+        sections = re.split(r'(?:\d+[\)\.:]|Suggestion \d+:|\n\n+)', text)
+        
+        for section in sections:
+            if not section.strip():
+                continue
+            
+            lines = section.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Try to match key-value pairs
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip().lower().replace(' ', '_')
+                    value = value.strip()
+                    
+                    # Handle lists
+                    if key in ['activities', 'accommodation_suggestions', 'transportation', 'local_tips']:
+                        if '[' in value and ']' in value:
+                            value = [v.strip().strip('"') for v in value.strip('[]').split(',')]
+                        else:
+                            value = [value]
+                    
+                    current_suggestion[key] = value
+            
+            if current_suggestion:
+                suggestions.append(current_suggestion)
+                current_suggestion = {}
+        
+        if suggestions:
+            return self._validate_suggestions(suggestions)
+        
+        raise ValueError("Could not parse suggestions from text")

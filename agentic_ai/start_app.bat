@@ -2,6 +2,26 @@
 echo Starting AI Travel Planner...
 echo.
 
+REM Check for environment variables
+if not defined OPENROUTER_API_KEY (
+    echo ❌ OPENROUTER_API_KEY environment variable not set
+    echo Please set it before running the application
+    echo.
+)
+
+if not defined RAPIDAPI_KEY (
+    echo ⚠️ RAPIDAPI_KEY environment variable not set
+    echo For real flight and hotel data, please:
+    echo 1. Sign up at https://rapidapi.com
+    echo 2. Subscribe to:
+    echo    - Travelpayouts Flight Data API
+    echo    - Hotels.com API
+    echo 3. Get your API key and set it as RAPIDAPI_KEY
+    echo.
+    echo The app will use simulated data for now.
+    echo.
+)
+
 REM Set working directory
 cd /d "%~dp0"
 

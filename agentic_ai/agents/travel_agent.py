@@ -1,9 +1,13 @@
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
-from datetime import datetime
-from tools.travel_tools import ItineraryPlannerTool
+from datetime import datetime, timedelta
+from tools.travel_tools import ItineraryPlannerTool, FlightSearchTool, HotelSearchTool
+from tools.travel_utils import logger
+from tools.travel_types import TravelSuggestion, Itinerary
 import aiohttp
 import json
+import traceback
+import re
 
 @dataclass
 class TravelRequest:
@@ -26,52 +30,55 @@ class TravelPreferences:
     accommodation_type: Optional[str] = None
 
 @dataclass
-class TravelSuggestion:
-    destination: str
-    description: str
-    best_time_to_visit: str
-    estimated_budget: str
-    duration: str
-    activities: List[str]
-    accommodation_suggestions: List[str]
-    transportation: List[str]
-    local_tips: List[str]
-    weather_info: str
-    safety_info: str
-
-@dataclass
 class ProcessedInput:
     content: str
     extracted_entities: Dict[str, Any]
 
-@dataclass
-class Itinerary:
-    travel_request: TravelRequest
-    flights: List[Dict]
-    hotels: List[Dict]
-    activities: List[Dict]
-    total_cost: float
-    created_at: datetime = datetime.now()
-    destination: Optional[str] = None
-    total_days: Optional[int] = None
-    total_budget: Optional[str] = None
-    daily_plans: Optional[List[Dict]] = None
-    accommodation_details: Optional[List[Dict]] = None
-    transportation_details: Optional[List[Dict]] = None
-    emergency_contacts: Optional[List[Dict]] = None
-    packing_list: Optional[List[str]] = None
-    important_notes: Optional[List[str]] = None
-
 class TravelAgent:
-    def __init__(self, config: Dict):
-        self.config = config
-        self.memory = {}  # Will be replaced with proper memory system
+    def __init__(self, config: Dict = None):
+        # Initialize with default config
+        default_config = {
+            'market': 'US',
+            'language': 'en-US',
+            'currency': 'USD',
+            'budget_range': 'Budget',
+            'num_travelers': 1,
+            'children_ages': [],
+            'cabin_class': 'CABIN_CLASS_ECONOMY',
+            'tools': {}
+        }
+        
+        # Update with provided config
+        self.config = {**default_config, **(config or {})}
+        
+        # Initialize memory
+        self.memory = {}
         
         # Initialize tools
-        self.itinerary_planner = config.get('tools', {}).get('itinerary_planner') or ItineraryPlannerTool(
-            model_id="microsoft/phi-2"
-        )
+        self.itinerary_planner = self.config.get('tools', {}).get('itinerary_planner')
         
+        # Initialize flight and hotel search tools
+        self.flight_search = self.config.get('tools', {}).get('flight_search') or FlightSearchTool(
+            api_key=self.config.get('rapidapi_key')
+        )
+        self.hotel_search = self.config.get('tools', {}).get('hotel_search') or HotelSearchTool(
+            api_key=self.config.get('rapidapi_key')
+        )
+    
+    def update_config(self, preferences: TravelPreferences):
+        """Update config with user preferences"""
+        self.config.update({
+            'language': preferences.language_preference,
+            'num_travelers': preferences.group_size,
+            'budget_range': preferences.budget_range,
+            # Map budget range to cabin class
+            'cabin_class': {
+                'Budget': 'CABIN_CLASS_ECONOMY',
+                'Moderate': 'CABIN_CLASS_PREMIUM_ECONOMY',
+                'Luxury': 'CABIN_CLASS_BUSINESS'
+            }.get(preferences.budget_range, 'CABIN_CLASS_ECONOMY')
+        })
+    
     async def plan_trip(self, travel_request: TravelRequest) -> Itinerary:
         """
         Main method to plan a complete trip based on the travel request.
@@ -81,13 +88,13 @@ class TravelAgent:
             travel_request.destination,
             travel_request.start_date
         )
-        
+        print(f"Flights: {flights}")
         hotels = await self.search_hotels(
             travel_request.destination,
             travel_request.start_date,
             travel_request.end_date
         )
-        
+        print(f"Hotels: {hotels}")
         # Calculate trip duration in days
         duration = (travel_request.end_date - travel_request.start_date).days
         
@@ -110,143 +117,58 @@ class TravelAgent:
     
     async def search_flights(self, origin: str, destination: str, date: datetime) -> List[Dict]:
         """
-        Search for available flights.
+        Search for flights using the FlightSearchTool.
         """
-        # Implementation using RapidAPI
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'X-RapidAPI-Key': self.config.get('rapid_api_key'),
-                'X-RapidAPI-Host': 'skyscanner-api.p.rapidapi.com'
-            }
-            
-            try:
-                # First get place IDs
-                places_url = "https://skyscanner-api.p.rapidapi.com/v3/geo/hierarchy/flights/en-US"
-                async with session.get(places_url, headers=headers) as response:
-                    places_data = await response.json()
-                    
-                # Search flights
-                search_url = "https://skyscanner-api.p.rapidapi.com/v3e/flights/live/search/create"
-                payload = {
-                    "query": {
-                        "market": "US",
-                        "locale": "en-US",
-                        "currency": "USD",
-                        "queryLegs": [
-                            {
-                                "originPlaceId": f"{origin}-sky",
-                                "destinationPlaceId": f"{destination}-sky",
-                                "date": date.strftime('%Y-%m-%d')
-                            }
-                        ],
-                        "cabinClass": "CABIN_CLASS_ECONOMY",
-                        "adults": 1
-                    }
+        logger.log_info("Searching for flights", {
+            "origin": origin,
+            "destination": destination,
+            "date": date.strftime('%Y-%m-%d')
+        })
+        
+        try:
+            flights = await self.flight_search.execute(origin, destination, date)
+            logger.log_info("Found flights", {"count": len(flights), "flights": flights})
+            return flights
+        except Exception as e:
+            logger.log_error(e, "TravelAgent.search_flights")
+            # Return simulated data as fallback
+            return [
+                {
+                    'date': date.strftime('%Y-%m-%d'),
+                    'price': 800,
+                    'airline': 'Global Airways',
+                    'flight_number': 'GA123',
+                    'departure': origin,
+                    'arrival': destination
                 }
-                
-                async with session.post(search_url, headers=headers, json=payload) as response:
-                    data = await response.json()
-                    flights = []
-                    
-                    if data.get('content', {}).get('results', {}).get('itineraries'):
-                        for itinerary in data['content']['results']['itineraries']:
-                            price_info = itinerary.get('pricingOptions', [{}])[0]
-                            flight_info = itinerary.get('legs', [{}])[0]
-                            
-                            flights.append({
-                                'date': date.strftime('%Y-%m-%d'),
-                                'price': price_info.get('price', {}).get('amount'),
-                                'airline': flight_info.get('carriers', [{}])[0].get('name'),
-                                'flight_number': flight_info.get('segments', [{}])[0].get('flightNumber'),
-                                'departure': origin,
-                                'arrival': destination
-                            })
-                    
-                    return flights
-            except Exception as e:
-                print(f"Error searching flights: {str(e)}")
-                return []
+            ]
     
     async def search_hotels(self, location: str, check_in: datetime, check_out: datetime) -> List[Dict]:
         """
-        Search for available hotels.
+        Search for hotels using the HotelSearchTool.
         """
-        # Implementation using RapidAPI Hotels.com
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'X-RapidAPI-Key': self.config.get('rapid_api_key'),
-                'X-RapidAPI-Host': 'hotels4.p.rapidapi.com'
-            }
-            
-            try:
-                # Step 1: Get location ID
-                location_url = "https://hotels4.p.rapidapi.com/locations/v3/search"
-                location_params = {
-                    'q': location,
-                    'locale': 'en_US',
-                    'langid': '1033'
+        logger.log_info("Searching for hotels", {
+            "location": location,
+            "check_in": check_in.strftime('%Y-%m-%d'),
+            "check_out": check_out.strftime('%Y-%m-%d')
+        })
+        
+        try:
+            hotels = await self.hotel_search.execute(location, check_in, check_out)
+            logger.log_info("Found hotels", {"count": len(hotels), "hotels": hotels})
+            return hotels
+        except Exception as e:
+            logger.log_error(e, "TravelAgent.search_hotels")
+            # Return simulated data as fallback
+            return [
+                {
+                    'name': 'Grand Hotel',
+                    'rating': 4.5,
+                    'price': '$200 per night',
+                    'address': f'123 Main Street, {location}',
+                    'amenities': ['Pool', 'Spa', 'Restaurant', 'Gym', 'Free WiFi']
                 }
-                
-                async with session.get(location_url, headers=headers, params=location_params) as response:
-                    location_data = await response.json()
-                    
-                    if not location_data.get('suggestions', []):
-                        return []
-                    
-                    # Get the first location ID
-                    location_id = None
-                    for suggestion in location_data['suggestions']:
-                        if suggestion['group'] == 'CITY_GROUP':
-                            location_id = suggestion['entities'][0]['destinationId']
-                            break
-                    
-                    if not location_id:
-                        return []
-                    
-                    # Step 2: Search for hotels
-                    properties_url = "https://hotels4.p.rapidapi.com/properties/v2/list"
-                    payload = {
-                        "currency": "USD",
-                        "eapid": 1,
-                        "locale": "en_US",
-                        "siteId": 300000001,
-                        "destination": {
-                            "regionId": location_id
-                        },
-                        "checkInDate": {
-                            "day": check_in.day,
-                            "month": check_in.month,
-                            "year": check_in.year
-                        },
-                        "checkOutDate": {
-                            "day": check_out.day,
-                            "month": check_out.month,
-                            "year": check_out.year
-                        },
-                        "rooms": [{"adults": 1}],
-                        "resultsStartingIndex": 0,
-                        "resultsSize": 10
-                    }
-                    
-                    async with session.post(properties_url, headers=headers, json=payload) as response:
-                        hotels_data = await response.json()
-                        hotels = []
-                        
-                        if hotels_data.get('data', {}).get('propertySearch', {}).get('properties'):
-                            for hotel in hotels_data['data']['propertySearch']['properties']:
-                                hotels.append({
-                                    'name': hotel.get('name'),
-                                    'id': hotel.get('id'),
-                                    'price': hotel.get('price', {}).get('displayMessages', [{}])[0].get('lineItems', [{}])[0].get('price', {}).get('formatted'),
-                                    'rating': hotel.get('reviews', {}).get('score'),
-                                    'address': hotel.get('location', {}).get('address', {}).get('addressLine'),
-                                    'amenities': [amenity.get('text') for amenity in hotel.get('amenities', [])[:5]] if hotel.get('amenities') else []
-                                })
-                        
-                        return hotels
-            except Exception as e:
-                print(f"Error searching hotels: {str(e)}")
-                return []
+            ]
     
     async def get_location_info(self, location: str) -> Dict:
         """
@@ -298,9 +220,23 @@ class TravelAgent:
 class SmartTravelAgent(TravelAgent):
     """Intelligent travel agent that creates suggestions and itineraries"""
     
-    def __init__(self, model_type: str = "devstral"):
-        super().__init__(config={})
-        self.model_type = model_type
+    def __init__(self, config: Dict = None):
+        super().__init__(config or {})
+        self.model_type = config.get('model_type', 'devstral') if config else 'devstral'
+        logger.log_info("Initializing SmartTravelAgent", {
+            "model_type": self.model_type,
+            "config": config
+        })
+        
+        # Initialize tools if provided in config
+        if config and 'tools' in config:
+            self.itinerary_planner = config['tools'].get('itinerary_planner')
+        
+        # Initialize default tool if not provided
+        if not hasattr(self, 'itinerary_planner'):
+            from tools.travel_tools import ItineraryPlannerTool
+            self.itinerary_planner = ItineraryPlannerTool()
+            logger.log_info("Using default ItineraryPlannerTool")
     
     def _validate_suggestion_data(self, data: Dict, duration: int) -> Dict:
         """Validate and clean suggestion data"""
@@ -380,15 +316,14 @@ class SmartTravelAgent(TravelAgent):
             "safety_info": data.get("safety_info", "Follow standard travel precautions")
         }
 
-    async def create_suggestions(self, 
-                               processed_input: ProcessedInput,
-                               preferences: TravelPreferences) -> List[TravelSuggestion]:
+    async def create_suggestions(self, processed_input: ProcessedInput, preferences: TravelPreferences) -> List[TravelSuggestion]:
         """Create travel suggestions based on input and preferences"""
         
-        print("\n=== User Input ===")
-        print(f"Input text: {processed_input.content}")
-        print(f"Extracted entities: {processed_input.extracted_entities}")
-        print(f"Preferences: {preferences}")
+        logger.log_info("Creating Travel Suggestions", {
+            "input_text": processed_input.content,
+            "extracted_entities": processed_input.extracted_entities,
+            "preferences": preferences.__dict__
+        })
         
         # Parse duration from input
         try:
@@ -396,13 +331,46 @@ class SmartTravelAgent(TravelAgent):
             duration = int(''.join(c for c in duration_str if c.isdigit()) or '5')
         except (ValueError, TypeError):
             duration = 5
+            logger.log_warning(f"Failed to parse duration from '{duration_str}', using default: {duration}")
+        
+        # Generate suggestions using LLM
+        suggestions = await self._generate_suggestions(processed_input, preferences, duration)
+        
+        # For each suggestion, try to get real flight data
+        for suggestion in suggestions:
+            try:
+                # Extract origin from input text or use default
+                origin = None
+                if "origin" in processed_input.extracted_entities:
+                    origin = processed_input.extracted_entities["origin"]
+                else:
+                    # Try to find origin in input text
+                    origin_match = re.search(r"from\s+([^,]+),?\s*", processed_input.content.lower())
+                    if origin_match:
+                        origin = origin_match.group(1).strip()
+                
+                if origin:
+                    # Get flight data
+                    flight_date = datetime.now() + timedelta(days=30)  # Default to 30 days from now
+                    flights = await self.search_flights(origin, suggestion.destination, flight_date)
+                    if flights:
+                        suggestion.flights = flights
+            except Exception as e:
+                logger.log_error(e, "SmartTravelAgent.create_suggestions - flight search")
+                # Keep the text description if flight search fails
+                pass
+        
+        return suggestions
+
+    async def _generate_suggestions(self, processed_input: ProcessedInput, preferences: TravelPreferences, duration: int) -> List[TravelSuggestion]:
+        """Generate travel suggestions using the itinerary planner"""
         
         # Create context from input and preferences
         context = self._build_context(processed_input, preferences)
         
-        prompt = f"""You are a travel expert. Create 2 detailed travel suggestions for the following request.
+        prompt = f"""Based on the following travel request and preferences, suggest 2 detailed travel destinations:
 
-Input: {processed_input.content}
+Travel Request: {processed_input.content}
 Duration: {duration} days
 
 Preferences:
@@ -423,66 +391,45 @@ Requirements:
 6. Suggest specific accommodations that match {preferences.accommodation_type} preference
 7. Include specific prices and details for all suggestions
 8. Each suggestion should be exactly {duration} days
+9. Include REAL destination names and specific locations
+10. Provide DETAILED activities with actual places to visit
 
 Return exactly 2 destinations in a JSON array with detailed, specific information for each field."""
         
+        logger.log_info("Generated Prompt", {"prompt": prompt})
+        
         try:
-            response = await self.itinerary_planner.execute(
+            # Get suggestions from the AI model
+            suggestions = await self.itinerary_planner.execute(
                 location="multiple",
                 duration=duration,
                 preferences={"prompt": prompt, "context": context}
             )
             
-            suggestions = []
+            logger.log_info("Raw Suggestions", {"suggestions": suggestions})
             
-            # Handle both list and dict responses
-            if isinstance(response, dict):
-                response = [response]
-            elif not isinstance(response, list):
-                response = []
+            # Convert to TravelSuggestion objects
+            travel_suggestions = []
+            for data in suggestions:
+                # Validate and clean the data
+                validated_data = self._validate_suggestion_data(data, duration)
+                logger.log_info("Validated Suggestion Data", {"data": validated_data})
+                
+                # Create suggestion object
+                suggestion = TravelSuggestion(**validated_data)
+                travel_suggestions.append(suggestion)
             
-            for data in response:
-                if isinstance(data, dict):
-                    # Validate and clean the data
-                    validated_data = self._validate_suggestion_data(data, duration)
-                    
-                    # Create suggestion with validated data
-                    suggestion = TravelSuggestion(**validated_data)
-                    suggestions.append(suggestion)
-            
-            # Ensure we have exactly 2 suggestions
-            while len(suggestions) < 2:
-                suggestions.append(self._create_fallback_suggestion(
-                    f"Alternative Destination {len(suggestions) + 1}",
-                    preferences,
-                    duration
-                ))
-            
-            # Print processed suggestions for debugging
-            print("\n=== Processed Suggestions ===")
-            for i, sugg in enumerate(suggestions[:2], 1):
-                print(f"\nSuggestion {i}:")
-                print(f"Destination: {sugg.destination}")
-                print(f"Description: {sugg.description}")
-                print(f"Best Time: {sugg.best_time_to_visit}")
-                print(f"Budget: {sugg.estimated_budget}")
-                print(f"Duration: {sugg.duration} days")
-                print(f"Activities: {', '.join(sugg.activities)}")
-                print(f"Accommodations: {', '.join(sugg.accommodation_suggestions)}")
-                print(f"Transportation: {', '.join(sugg.transportation)}")
-                print(f"Local Tips: {', '.join(sugg.local_tips)}")
-                print(f"Weather: {sugg.weather_info}")
-                print(f"Safety: {sugg.safety_info}")
-            
-            return suggestions[:2]  # Return exactly 2 suggestions
+            return travel_suggestions[:2]  # Return exactly 2 suggestions
             
         except Exception as e:
-            print(f"\nError processing suggestions: {str(e)}")
+            logger.log_error(e, "SmartTravelAgent._generate_suggestions")
             # Create two fallback suggestions in case of error
-            return [
-                self._create_fallback_suggestion(f"US Travel Destination {i+1}", preferences, duration)
-                for i in range(2)  # Changed from 3 to 2
+            fallback_suggestions = [
+                self._create_fallback_suggestion(f"Popular Travel Destination {i+1}", preferences, duration)
+                for i in range(2)
             ]
+            logger.log_info("Using fallback suggestions", {"suggestions": fallback_suggestions})
+            return fallback_suggestions
     
     def _create_fallback_suggestion(self, text: str, preferences: TravelPreferences, duration: int = 5) -> TravelSuggestion:
         """Create a fallback suggestion with preference-aware defaults"""

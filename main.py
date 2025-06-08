@@ -57,7 +57,10 @@ async def main():
         print("\n=== Travel Itinerary ===")
         print(f"Trip to {travel_request.destination} from {travel_request.origin}")
         print(f"Dates: {travel_request.start_date.date()} to {travel_request.end_date.date()}")
-        
+        print(f"Flights: {itinerary.flights}")
+        print(f"Hotels: {itinerary.hotels}")
+        print(f"Activities: {itinerary.activities}")
+        print(f"Total Cost: {itinerary.total_cost}")
         if itinerary.flights:
             print("\nFlights:")
             for flight in itinerary.flights:

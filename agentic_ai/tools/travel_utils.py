@@ -1,6 +1,9 @@
 from typing import Dict, List, Optional
 import pandas as pd
-from agents.travel_agent import TravelSuggestion, Itinerary
+from .travel_types import TravelSuggestion, Itinerary
+import logging
+import os
+from datetime import datetime
 
 # Optional imports with fallbacks
 try:
@@ -14,6 +17,73 @@ try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
+
+class LogManager:
+    """Manages logging for the travel planner application"""
+    
+    def __init__(self, log_dir: str = "logs"):
+        self.log_dir = log_dir
+        self._setup_logging()
+    
+    def _setup_logging(self):
+        """Setup logging configuration"""
+        # Create logs directory if it doesn't exist
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+        
+        # Create a new log file for each run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = os.path.join(self.log_dir, f"travel_planner_{timestamp}.log")
+        
+        # Configure logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()  # Also print to console
+            ]
+        )
+        
+        self.logger = logging.getLogger("TravelPlanner")
+        self.logger.info("=== Starting New Travel Planning Session ===")
+    
+    def log_api_request(self, endpoint: str, payload: Dict):
+        """Log API request details"""
+        self.logger.info(f"\n=== API Request to {endpoint} ===")
+        self.logger.info(f"Payload: {payload}")
+    
+    def log_api_response(self, endpoint: str, response: Dict):
+        """Log API response details"""
+        self.logger.info(f"\n=== API Response from {endpoint} ===")
+        self.logger.info(f"Response: {response}")
+    
+    def log_error(self, error: Exception, context: str = None):
+        """Log error details"""
+        self.logger.error(f"\n=== Error in {context or 'Unknown Context'} ===")
+        self.logger.error(f"Error: {str(error)}")
+        self.logger.error(f"Stack trace:", exc_info=True)
+    
+    def log_info(self, message: str, data: Optional[Dict] = None):
+        """Log informational message"""
+        self.logger.info(f"\n{message}")
+        if data:
+            self.logger.info(f"Data: {data}")
+    
+    def log_warning(self, message: str, data: Optional[Dict] = None):
+        """Log warning message"""
+        self.logger.warning(f"\n{message}")
+        if data:
+            self.logger.warning(f"Data: {data}")
+    
+    def log_debug(self, message: str, data: Optional[Dict] = None):
+        """Log debug message"""
+        self.logger.debug(f"\n{message}")
+        if data:
+            self.logger.debug(f"Data: {data}")
+
+# Create a global logger instance
+logger = LogManager()
 
 class TravelUtils:
     """Utility functions for travel-related operations"""

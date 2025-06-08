@@ -13,30 +13,37 @@ class TravelWorkflow:
         # Step 1: Validate the travel request
         self._validate_request(travel_request)
         
-        # Step 2: Get destination information
+        # Step 2: Update agent config with preferences
+        if hasattr(self.agent, 'update_config'):
+            preferences = TravelPreferences(**travel_request.preferences)
+            self.agent.update_config(preferences)
+        
+        # Step 3: Get destination information
         destination_info = await self.agent.get_location_info(travel_request.destination)
         
-        # Step 3: Search for flights
+        # Step 4: Search for flights
         flights = await self.agent.search_flights(
             travel_request.origin,
             travel_request.destination,
             travel_request.start_date
         )
-        
-        # Step 4: Search for hotels
+        print(f"Flights from workflow: {flights}")
+        # Step 5: Search for hotels
         hotels = await self.agent.search_hotels(
             travel_request.destination,
             travel_request.start_date,
             travel_request.end_date
         )
-        
-        # Step 5: Plan activities
+        print(f"Hotels from workflow: {hotels}")
+        # Step 6: Plan activities
         activities = await self.agent.suggest_activities(
             travel_request.destination,
-            [travel_request.start_date, travel_request.end_date]
+            [travel_request.start_date, travel_request.end_date],
+            duration=(travel_request.end_date - travel_request.start_date).days,
+            preferences=travel_request.preferences
         )
         
-        # Step 6: Create itinerary
+        # Step 7: Create itinerary
         itinerary = Itinerary(
             travel_request=travel_request,
             flights=flights,
@@ -55,6 +62,9 @@ class TravelWorkflow:
         """
         if not isinstance(self.agent, SmartTravelAgent):
             raise ValueError("Smart planning workflow requires SmartTravelAgent")
+        
+        # Update agent config with preferences
+        self.agent.update_config(preferences)
             
         # Get travel suggestions
         suggestions = await self.agent.create_suggestions(processed_input, preferences)

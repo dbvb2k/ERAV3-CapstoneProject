@@ -13,23 +13,67 @@ import nest_asyncio
 from agents.travel_agent import SmartTravelAgent, TravelPreferences, ProcessedInput, TravelRequest
 from tools.travel_utils import TravelUtils
 from workflows.travel_workflow import TravelWorkflow
-from tools.travel_tools import get_cached_pipeline
+from tools.travel_tools import ItineraryPlannerTool
 import json
 import traceback
+import os
+from dotenv import load_dotenv
+from typing import Dict, Any
+
+# Load environment variables
+load_dotenv()
 
 # Enable nested asyncio for Streamlit
 nest_asyncio.apply()
 
 # Pre-initialize the model pipeline
-pipeline = get_cached_pipeline()
+# pipeline = get_cached_pipeline()
 
 # Initialize the agent and workflow only once using session state
 @st.cache_resource(show_spinner="Loading AI Travel Planner...")
 def get_agent_and_workflow():
     """Initialize and cache the agent and workflow with all tools"""
-    agent = SmartTravelAgent(model_type="devstral")
-    workflow = TravelWorkflow(agent)
-    return agent, workflow
+    try:
+        # Get API configuration
+        openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
+        rapidapi_key = os.getenv('RAPID_API_KEY')
+        site_url = os.getenv('SITE_URL', 'http://localhost:8501')
+        site_name = os.getenv('SITE_NAME', 'AI Travel Planner')
+        
+        if not openrouter_api_key:
+            st.error("OpenRouter API key not found. Please set OPENROUTER_API_KEY in your environment variables.")
+            st.stop()
+        
+        if not rapidapi_key:
+            st.warning("RapidAPI key not found. Using simulated flight and hotel data.")
+        
+        # Initialize the planner tool with OpenRouter configuration
+        planner_tool = ItineraryPlannerTool(
+            openrouter_api_key=openrouter_api_key,
+            site_url=site_url,
+            site_name=site_name
+        )
+        
+        # Create agent configuration
+        agent_config = {
+            'model_type': 'openrouter',
+            'tools': {
+                'itinerary_planner': planner_tool
+            },
+            'market': 'US',
+            'language': 'en-US',
+            'currency': 'USD',
+            'rapidapi_key': rapidapi_key
+        }
+        
+        # Initialize the agent with the configured tool
+        agent = SmartTravelAgent(config=agent_config)
+        workflow = TravelWorkflow(agent)
+        
+        return agent, workflow
+    except Exception as e:
+        st.error(f"Error initializing AI Travel Planner: {str(e)}")
+        st.stop()
 
 # Get or create the agent and workflow
 agent, workflow = get_agent_and_workflow()
@@ -92,6 +136,42 @@ preferences = TravelPreferences(
     accommodation_type=accommodation_type
 )
 
+def extract_travel_entities(text: str) -> Dict[str, Any]:
+    """Extract travel-related entities from text"""
+    # Simple keyword-based extraction
+    travel_keywords = {
+        'duration': [r'(\d+)\s*(day|days|week|weeks|month|months)', r'for\s+(\d+)\s*(day|days|week|weeks|month|months)'],
+        'destinations': ['city', 'country', 'beach', 'mountain', 'hotel', 'resort'],
+        'activities': ['hiking', 'sightseeing', 'museum', 'restaurant', 'shopping', 'adventure', 'cultural', 'food'],
+        'budget_terms': ['budget', 'cheap', 'expensive', 'luxury', 'affordable', 'cost']
+    }
+    
+    entities = {}
+    text_lower = text.lower()
+    
+    # Extract duration using regex
+    import re
+    for pattern in travel_keywords['duration']:
+        match = re.search(pattern, text_lower)
+        if match:
+            number = int(match.group(1))
+            unit = match.group(2)
+            if 'week' in unit:
+                number *= 7
+            elif 'month' in unit:
+                number *= 30
+            entities['duration'] = f"{number} days"
+            break
+    
+    # Extract other entities
+    for category, keywords in travel_keywords.items():
+        if category != 'duration':  # Skip duration as it's handled above
+            found_keywords = [kw for kw in keywords if kw in text_lower]
+            if found_keywords:
+                entities[category] = found_keywords
+    
+    return entities
+
 if mode == "Get Travel Suggestions":
     st.header("🔍 Get Travel Suggestions")
     
@@ -104,10 +184,13 @@ if mode == "Get Travel Suggestions":
     if st.button("Get Suggestions"):
         with st.spinner("Generating travel suggestions..."):
             try:
+                # Extract entities from input
+                extracted_entities = extract_travel_entities(travel_input)
+                
                 # Create processed input
                 processed_input = ProcessedInput(
                     content=travel_input,
-                    extracted_entities={"duration": "1 week"}
+                    extracted_entities=extracted_entities
                 )
                 
                 # Get suggestions
@@ -151,6 +234,15 @@ if mode == "Get Travel Suggestions":
                             transportation = suggestion.transportation if isinstance(suggestion.transportation, list) else []
                             for transport in transportation:
                                 st.write(f"- {transport}")
+                            
+                            # Add flight information display
+                            st.write("**Flight Options:**")
+                            if isinstance(suggestion.flights, str):
+                                st.write(f"- {suggestion.flights}")
+                            elif isinstance(suggestion.flights, list):
+                                for flight in suggestion.flights:
+                                    st.write(f"- {flight['airline']} Flight {flight['flight_number']}: {flight['departure']} → {flight['arrival']}")
+                                    st.write(f"  Date: {flight['date']}, Price: ${flight['price']}")
                             
                             st.write("**Local Tips:**")
                             tips = suggestion.local_tips if isinstance(suggestion.local_tips, list) else []
@@ -211,10 +303,21 @@ else:  # Create Detailed Itinerary
             if itinerary.flights:
                 with st.expander("✈️ Flight Details"):
                     for flight in itinerary.flights:
-                        st.write(f"**{flight['airline']}** - Flight {flight['flight_number']}")
-                        st.write(f"From: {flight['departure']} To: {flight['arrival']}")
-                        st.write(f"Date: {flight['date']}")
-                        st.write(f"Price: ${flight['price']}")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write(f"**{flight['airline']}** - Flight {flight.get('flight_number', 'N/A')}")
+                            st.write(f"From: {flight['departure']} To: {flight['arrival']}")
+                        with col2:
+                            st.write(f"Date: {flight['date']}")
+                            st.write(f"Price: ${flight['price']}")
+                            if 'departure_time' in flight:
+                                st.write(f"Departure: {flight['departure_time']}")
+                            if 'arrival_time' in flight:
+                                st.write(f"Arrival: {flight['arrival_time']}")
+                            if 'duration' in flight:
+                                st.write(f"Duration: {flight['duration']}")
+                            if 'stops' in flight:
+                                st.write(f"Stops: {flight['stops']}")
                         st.divider()
             
             # Display hotels
