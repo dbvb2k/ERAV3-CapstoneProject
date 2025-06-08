@@ -1,5 +1,6 @@
 import asyncio
 from typing import Any, Dict
+import time
 
 try:
     from langdetect import detect
@@ -36,13 +37,13 @@ class BaseProcessor(InputProcessor):
         except:
             return "en"  # Default to English
     
-    def translate_text(self, text: str, target_lang: str = "en") -> str:
+    async def translate_text(self, text: str, target_lang: str = "en") -> str:
         """Translate text to target language"""
         if not GOOGLETRANS_AVAILABLE or self.translator is None:
             return text  # Return original text if translator not available
         try:
             if self.detect_language(text) != target_lang:
-                translated = self.translator.translate(text, dest=target_lang)
+                translated = await self.translator.translate(text, dest=target_lang)
                 return translated.text
             return text
         except:
@@ -75,16 +76,36 @@ class TextProcessor(BaseProcessor):
         return input_type == InputType.TEXT
     
     async def process(self, input_data: str) -> ProcessedInput:
-        """Process text input"""
-        language = self.detect_language(input_data)
-        translated_text = self.translate_text(input_data, "en")
-        entities = self.extract_travel_entities(translated_text)
-        
-        return ProcessedInput(
-            input_type=InputType.TEXT,
-            content=translated_text,
-            metadata={"original_text": input_data, "detected_language": language},
-            language=language,
-            confidence=0.9,
-            extracted_entities=entities
-        )
+        """Process the input text"""
+        try:
+            # Detect language
+            language = self.detect_language(input_data)
+            
+            # Translate text to English if needed
+            translated_text = await self.translate_text(input_data, "en")
+            
+            # Extract travel-related entities
+            entities = self.extract_travel_entities(translated_text)
+            
+            return ProcessedInput(
+                input_type=InputType.TEXT,
+                content=translated_text,
+                metadata={
+                    "original_text": input_data,
+                    "processed_timestamp": time.time(),
+                    "detected_language": language
+                },
+                language=language,
+                confidence=0.9,  # High confidence for text processing
+                extracted_entities=entities
+            )
+        except Exception as e:
+            print(f"Error processing text: {str(e)}")
+            return ProcessedInput(
+                input_type=InputType.TEXT,
+                content=input_data,
+                metadata={"error": str(e)},
+                language="en",
+                confidence=0.0,
+                extracted_entities={}
+            )

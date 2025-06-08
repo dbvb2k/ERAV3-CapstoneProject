@@ -10,6 +10,8 @@ from typing import Dict, Optional, Any, List
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+import traceback
+import time
 
 # Base classes to avoid circular imports
 class InputType(Enum):
@@ -49,14 +51,16 @@ try:
     import torch
     TRANSFORMERS_AVAILABLE = True
     TORCH_AVAILABLE = True
+    print("✅ Successfully imported transformers and torch")
 except ImportError as e:
+    print(f"❌ Failed to import dependencies: {str(e)}")
     pass
 
 # Configuration - Using fallback to avoid import issues
 class Config:
     OLLAMA_BASE_URL = "http://localhost:11434"
     DEVSTRAL_MODEL_NAME = "devstral"
-    HUGGINGFACE_MODEL = "microsoft/DialoGPT-medium"
+    HUGGINGFACE_MODEL = "microsoft/phi-2"
     HUGGINGFACE_TOKEN = None
 
 class DevstralModel(AIModel):
@@ -165,17 +169,21 @@ Provide detailed, personalized, and actionable travel recommendations. Always co
 class HuggingFaceLocalModel(AIModel):
     """
     Local HuggingFace model for offline processing
-    Fallback when cloud services are unavailable
+    Optimized for CPU usage with Microsoft's Phi model
     """
     
-    def __init__(self, model_name: str = "microsoft/DialoGPT-medium"):
+    def __init__(self, model_name: str = "microsoft/phi-2"):
         self.model_name = model_name
         self.model = None
         self.tokenizer = None
+        self.pipeline = None
         self.is_loaded = False
         
         if TRANSFORMERS_AVAILABLE:
+            print("🔄 Attempting to load model...")
             self._load_model()
+        else:
+            print("❌ Transformers library not available")
     
     def is_available(self) -> bool:
         """Check if the local model is available"""
@@ -184,13 +192,78 @@ class HuggingFaceLocalModel(AIModel):
     def _load_model(self):
         """Load model locally"""
         try:
-            print(f"Loading {self.model_name} locally...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+            print(f"📥 Loading {self.model_name} locally...")
+            start_time = time.time()
+            
+            # Step 1: Load tokenizer
+            print("1️⃣ Loading tokenizer...")
+            tokenizer_start = time.time()
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                trust_remote_code=True,
+                padding_side="left"
+            )
+            print(f"✅ Tokenizer loaded ({time.time() - tokenizer_start:.2f}s)")
+            
+            # Ensure pad token is set
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                print("ℹ️ Set pad token to eos token")
+            
+            # Step 2: Load model with optimizations
+            print("2️⃣ Loading model (this may take a few minutes)...")
+            model_start = time.time()
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    use_safetensors=True,
+                    low_cpu_mem_usage=True,
+                    offload_folder="model_cache"  # Cache model parts to disk
+                )
+                print(f"✅ Model loaded ({time.time() - model_start:.2f}s)")
+            except Exception as model_error:
+                print(f"⚠️ First loading attempt failed: {str(model_error)}")
+                print("🔄 Trying alternative loading method...")
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    use_safetensors=True,
+                    low_cpu_mem_usage=True,
+                    device_map="auto"
+                )
+            
+            # Step 3: Create pipeline
+            print("3️⃣ Creating text generation pipeline...")
+            pipeline_start = time.time()
+            try:
+                self.pipeline = pipeline(
+                    "text-generation",
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    framework="pt",
+                    model_kwargs={"low_cpu_mem_usage": True}
+                )
+                print(f"✅ Pipeline created ({time.time() - pipeline_start:.2f}s)")
+            except Exception as pipeline_error:
+                print(f"⚠️ First pipeline creation attempt failed: {str(pipeline_error)}")
+                print("🔄 Trying alternative pipeline creation...")
+                self.pipeline = pipeline(
+                    task="text-generation",
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    device_map="auto"
+                )
+            
+            total_time = time.time() - start_time
             self.is_loaded = True
-            print(f"✅ {self.model_name} loaded successfully")
+            print(f"✅ {self.model_name} loaded successfully in {total_time:.2f}s")
+            
         except Exception as e:
-            print(f"❌ Failed to load {self.model_name}: {e}")
+            print(f"❌ Failed to load {self.model_name}: {str(e)}")
+            print(f"📋 Full error: {traceback.format_exc()}")
             self.is_loaded = False
     
     async def generate_response(self, prompt: str, context: Optional[str] = None) -> str:
@@ -199,31 +272,60 @@ class HuggingFaceLocalModel(AIModel):
             return "Local HuggingFace model not available. Please ensure transformers library is installed."
         
         try:
-            travel_context = "Travel Advisory Context: Provide helpful travel information and recommendations.\n\n"
-            full_prompt = travel_context
+            # Log the incoming request
+            print("\n" + "="*50)
+            print("📝 Received Query:", prompt)
+            print("="*50)
+            
+            travel_context = """You are a knowledgeable travel advisor. Your goal is to provide helpful, accurate, and detailed travel information and recommendations.
+Focus on:
+- Destination insights and local attractions
+- Cultural considerations and customs
+- Travel logistics and planning
+- Budget recommendations
+- Safety tips
+- Local transportation options
+Please provide specific, actionable advice."""
+
+            full_prompt = travel_context + "\n\n"
             if context:
                 full_prompt += f"Context: {context}\n"
             full_prompt += f"Query: {prompt}\nResponse:"
             
-            inputs = self.tokenizer.encode(full_prompt, return_tensors='pt')
+            # Generate response using the pipeline with optimized settings
+            print("🤔 Generating response...")
+            start_time = time.time()
             
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    inputs,
-                    max_length=inputs.shape[1] + 200,
-                    num_return_sequences=1,
-                    temperature=0.7,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
+            outputs = self.pipeline(
+                full_prompt,
+                max_new_tokens=256,  # Reduced for faster responses
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                num_return_sequences=1,
+                pad_token_id=self.tokenizer.pad_token_id,
+                use_cache=True,  # Enable KV-cache
+                repetition_penalty=1.1,
+                no_repeat_ngram_size=3  # Prevent repetition
+            )
             
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            # Extract and clean the response
+            response = outputs[0]['generated_text']
             response = response[len(full_prompt):].strip()
+            
+            # Log the response and timing
+            gen_time = time.time() - start_time
+            print("\n" + "="*50)
+            print(f"✨ Generated Response ({gen_time:.2f}s):")
+            print(response)
+            print("="*50 + "\n")
             
             return response if response else "Unable to generate response with local model."
             
         except Exception as e:
-            return f"Error with local model: {str(e)}"
+            error_msg = f"Error with local model: {str(e)}"
+            print(f"❌ {error_msg}")
+            return error_msg
     
     async def analyze_input(self, processed_input: ProcessedInput) -> Dict[str, Any]:
         """Analyze input using local HuggingFace model"""
@@ -233,7 +335,8 @@ class HuggingFaceLocalModel(AIModel):
         return {
             "analysis": response,
             "model": f"local-{self.model_name}",
-            "processing": "offline"
+            "processing": "offline",
+            "capabilities": ["travel_expert", "local_processing"]
         }
 
 class OllamaGenericModel(AIModel):
@@ -315,41 +418,41 @@ class ModelFactory:
     def create_model(model_type: str = "auto") -> AIModel:
         """Create the appropriate model based on type and availability"""
         
-        if model_type == "devstral":
-            return DevstralModel()
-        elif model_type == "huggingface":
-            return HuggingFaceLocalModel()
-        elif model_type == "ollama":
-            return OllamaGenericModel()
-        elif model_type == "auto":
-            return ModelFactory.get_best_available_model()
-        else:
-            # Fallback to best available
-            return ModelFactory.get_best_available_model()
+        # If a specific model type is requested (not "auto"), return that model
+        if model_type != "auto":
+            if model_type == "devstral":
+                return DevstralModel()
+            elif model_type == "huggingface":
+                return HuggingFaceLocalModel()
+            elif model_type == "ollama":
+                return OllamaGenericModel()
+        
+        # Only use automatic selection if "auto" is specifically requested
+        return ModelFactory.get_best_available_model()
     
     @staticmethod
     def get_best_available_model() -> AIModel:
         """Get the best available model based on priority"""
         
-        # Priority 1: Devstral (specialized for travel)
+        # Priority 1: Local HuggingFace (Phi-2)
+        hf_model = HuggingFaceLocalModel()
+        if hf_model.is_available():
+            return hf_model
+        
+        # Priority 2: Devstral
         devstral = DevstralModel()
         if devstral.is_available():
             return devstral
         
-        # Priority 2: Other Ollama models
+        # Priority 3: Other Ollama models
         ollama_models = ["llama2", "mistral", "codellama"]
         for model_name in ollama_models:
             model = OllamaGenericModel(model_name)
             if model.is_available():
                 return model
         
-        # Priority 3: Local HuggingFace (fallback)
-        hf_model = HuggingFaceLocalModel()
-        if hf_model.is_available():
-            return hf_model
-        
-        # Fallback: Return DevStral anyway (will show error message if not available)
-        return devstral
+        # Fallback: Return HuggingFace model anyway (will show proper error message)
+        return hf_model
     
     @staticmethod
     def get_available_models() -> List[Dict[str, Any]]:
