@@ -88,6 +88,10 @@ logger = LogManager()
 class TravelUtils:
     """Utility functions for travel-related operations"""
     
+    def __init__(self, rapidapi_key: str = None):
+        """Initialize TravelUtils with optional RapidAPI key."""
+        self.rapidapi_key = rapidapi_key
+    
     @staticmethod
     def create_destination_map(suggestions: List[TravelSuggestion]):
         """Create interactive map with destination markers"""

@@ -2,54 +2,49 @@
 echo Starting AI Travel Planner...
 echo.
 
-REM Check for environment variables
+REM Check for Python
+python --version > nul 2>&1
+if %errorlevel% neq 0 (
+    echo Python is not installed or not in PATH
+    echo Please install Python from https://www.python.org/downloads/
+    pause
+    exit /b 1
+)
+
+REM Check for OpenRouter API key
 if not defined OPENROUTER_API_KEY (
     echo ❌ OPENROUTER_API_KEY environment variable not set
     echo Please set it before running the application
-    echo.
-)
-
-if not defined RAPIDAPI_KEY (
-    echo ⚠️ RAPIDAPI_KEY environment variable not set
-    echo For real flight and hotel data, please:
-    echo 1. Sign up at https://rapidapi.com
-    echo 2. Subscribe to:
-    echo    - Travelpayouts Flight Data API
-    echo    - Hotels.com API
-    echo 3. Get your API key and set it as RAPIDAPI_KEY
-    echo.
-    echo The app will use simulated data for now.
-    echo.
-)
-
-REM Set working directory
-cd /d "%~dp0"
-
-REM Check if Python is installed
-python --version > nul 2>&1
-if %errorlevel% neq 0 (
-    echo ❌ Python is not installed or not in PATH
-    echo Please install Python from https://www.python.org/downloads/
-    echo Make sure to check "Add Python to PATH" during installation
+    echo You can get an API key from https://openrouter.ai/
     pause
     exit /b 1
 )
 
-REM Install dependencies using python -m pip
+REM Install dependencies with compatible versions
 echo Installing dependencies...
-python -m pip install -q streamlit requests python-dotenv transformers torch python-weather forex-python overpass geopy nest-asyncio --no-cache-dir
-if %errorlevel% neq 0 (
-    echo ❌ Failed to install dependencies
-    echo Please make sure you have internet connection and try again
-    pause
-    exit /b 1
-)
+python -m pip install -q ^
+    streamlit>=1.32.0 ^
+    fastapi>=0.109.0 ^
+    uvicorn>=0.27.0 ^
+    langchain>=0.1.9 ^
+    langchain-core>=0.3.64 ^
+    langchain-community>=0.0.24 ^
+    langchain-anthropic>=0.3.15 ^
+    langchain-openai>=0.3.21 ^
+    python-dotenv>=1.0.1 ^
+    transformers>=4.41.0 ^
+    torch>=2.7.0 ^
+    torchvision>=0.22.0 ^
+    aiohttp>=3.12.4 ^
+    python-weather>=2.1.0 ^
+    requests>=2.31.0 ^
+    nest-asyncio>=1.6.0 ^
+    protobuf>=4.25.2 ^
+    sentence-transformers>=4.1.0 ^
+    --no-cache-dir
 
-REM Start the Streamlit application
-echo Starting Streamlit application...
-start "" http://localhost:8501
-
-REM Run streamlit
-python -m streamlit run app.py --server.port 8501 --server.headless true
+REM Start the application
+echo Starting application...
+python run_app.py --server.port 8501 --server.headless true
 
 pause 

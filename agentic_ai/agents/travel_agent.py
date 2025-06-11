@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from tools.travel_tools import ItineraryPlannerTool, FlightSearchTool, HotelSearchTool
 from tools.travel_utils import logger
 from tools.travel_types import TravelSuggestion, Itinerary
+from pydantic import BaseModel, Field
 import aiohttp
 import json
 import traceback
@@ -19,13 +20,12 @@ class TravelRequest:
     preferences: Dict[str, any]
     budget: Optional[float] = None
 
-@dataclass
-class TravelPreferences:
+class TravelPreferences(BaseModel):
     budget_range: Optional[str] = None
     travel_style: Optional[str] = None
     interests: Optional[List[str]] = None
-    group_size: int = 1
-    language_preference: str = "en"
+    group_size: int = Field(default=1)
+    language_preference: str = Field(default="en")
     dietary_restrictions: Optional[List[str]] = None
     accommodation_type: Optional[str] = None
 
