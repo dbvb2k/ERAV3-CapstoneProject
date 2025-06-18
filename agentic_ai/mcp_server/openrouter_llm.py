@@ -13,7 +13,7 @@ class OpenRouterLLM(LLM):
     """LangChain LLM implementation for OpenRouter."""
     
     api_key: str
-    model: str = "meta-llama/llama-2-70b-chat"
+    model: str = "meta-llama/llama-3.3-8b-instruct:free"
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
     max_tokens: int = 2000
     site_url: str = "http://localhost:8501"

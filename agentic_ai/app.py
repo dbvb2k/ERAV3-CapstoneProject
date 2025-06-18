@@ -31,6 +31,14 @@ st.set_page_config(
 # Enable nested asyncio for Streamlit
 nest_asyncio.apply()
 
+# Initialize session state for conversation management
+if 'conversation_session_id' not in st.session_state:
+    st.session_state.conversation_session_id = None
+if 'conversation_history' not in st.session_state:
+    st.session_state.conversation_history = []
+if 'current_mode' not in st.session_state:
+    st.session_state.current_mode = "Get Travel Suggestions"
+
 # Initialize the MCP server and tools
 @st.cache_resource(show_spinner="Loading AI Travel Planner...")
 def initialize_mcp_server():
@@ -47,7 +55,7 @@ def initialize_mcp_server():
             st.stop()
         
         if not rapidapi_key:
-            st.warning("RapidAPI key not found. Using simulated flight and hotel data.")
+            st.warning("RapidAPI key not found. Flight and hotel data will be unavailable.")
         
         # Initialize the planner tool
         planner_tool = ItineraryPlannerTool(
@@ -84,14 +92,108 @@ mcp_server, travel_utils, planner_tool = initialize_mcp_server()
 st.title("🌍 AI Travel Planner")
 st.markdown("""
 This intelligent travel planner helps you create personalized travel itineraries and get destination suggestions 
-based on your preferences. You can either get travel suggestions or create a detailed itinerary for a specific destination.
+based on your preferences. You can ask follow-up questions to refine your travel plans!
 """)
+
+# Add conversation management buttons
+col1, col2, col3 = st.columns([1, 1, 1])
+with col1:
+    if st.button("🔄 New Conversation"):
+        st.session_state.conversation_session_id = None
+        st.session_state.conversation_history = []
+        st.rerun()
+with col2:
+    if st.button("🗑️ Clear History"):
+        st.session_state.conversation_history = []
+        st.rerun()
+with col3:
+    if st.session_state.conversation_session_id:
+        st.info(f"Session: {st.session_state.conversation_session_id[:8]}...")
+
+# Add export functionality
+if st.session_state.conversation_history:
+    col4, col5 = st.columns([1, 1])
+    with col4:
+        if st.button("📄 Export Conversation"):
+            # Create export data
+            export_data = {
+                "session_id": st.session_state.conversation_session_id,
+                "export_date": datetime.now().isoformat(),
+                "conversation_history": st.session_state.conversation_history,
+                "user_preferences": preferences.model_dump(exclude_none=True)
+            }
+            
+            # Create downloadable JSON
+            import json
+            json_str = json.dumps(export_data, indent=2)
+            st.download_button(
+                label="📥 Download JSON",
+                data=json_str,
+                file_name=f"travel_conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+    
+    with col5:
+        if st.button("📋 Copy Summary"):
+            # Create a text summary
+            summary_lines = ["# Travel Planning Conversation Summary\n"]
+            summary_lines.append(f"**Session ID:** {st.session_state.conversation_session_id}\n")
+            summary_lines.append(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            for msg in st.session_state.conversation_history:
+                role = "User" if msg["role"] == "user" else "AI Assistant"
+                summary_lines.append(f"**{role}:** {msg['content']}\n")
+            
+            summary_text = "\n".join(summary_lines)
+            st.text_area("Conversation Summary", summary_text, height=200)
+
+# Display conversation history
+if st.session_state.conversation_history:
+    st.subheader("💬 Conversation History")
+    conversation_container = st.container()
+    
+    with conversation_container:
+        for i, message in enumerate(st.session_state.conversation_history):
+            if message["role"] == "user":
+                st.markdown(f"**You:** {message['content']}")
+            else:
+                st.markdown(f"**AI:** {message['content']}")
+            st.divider()
 
 # Sidebar for mode selection
 mode = st.sidebar.radio(
     "Choose Planning Mode",
     ["Get Travel Suggestions", "Create Detailed Itinerary"]
 )
+
+# Add intelligent mode detection
+def detect_request_type(user_input: str) -> str:
+    """Detect if the user is asking for suggestions or a specific itinerary"""
+    input_lower = user_input.lower()
+    
+    # Keywords that indicate a specific itinerary request
+    itinerary_keywords = [
+        'itinerary', 'schedule', 'plan', 'day 1', 'day 2', 'day 3', 'morning', 'afternoon', 'evening',
+        'create itinerary', 'make itinerary', 'detailed itinerary', 'travel plan'
+    ]
+    
+    # Keywords that indicate a suggestion request
+    suggestion_keywords = [
+        'suggest', 'recommend', 'where should', 'what should', 'ideas', 'options', 'alternatives'
+    ]
+    
+    # Check for itinerary keywords
+    for keyword in itinerary_keywords:
+        if keyword in input_lower:
+            return "itinerary"
+    
+    # Check for suggestion keywords
+    for keyword in suggestion_keywords:
+        if keyword in input_lower:
+            return "suggestions"
+    
+    # Default to suggestions if unclear
+    return "suggestions"
 
 # Common preferences input
 with st.sidebar:
@@ -197,10 +299,23 @@ if mode == "Get Travel Suggestions":
                 """Get travel suggestions from the agent."""
                 try:
                     print("\n=== Starting suggestion generation ===")
+                    
+                    # Detect if this is actually an itinerary request
+                    request_type = detect_request_type(travel_input)
+                    print(f"\n=== Detected request type: {request_type} ===")
+                    
                     async with httpx.AsyncClient() as client:
+                        # Prepare request with conversation state
+                        request_data = {
+                            "query": travel_input, 
+                            "context": context,
+                            "session_id": st.session_state.conversation_session_id,
+                            "conversation_history": st.session_state.conversation_history
+                        }
+                        
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
-                            json={"query": travel_input, "context": context},
+                            json=request_data,
                             timeout=30.0
                         )
                         print(f"\n=== Agent response received: {response.status_code} ===")
@@ -211,47 +326,28 @@ if mode == "Get Travel Suggestions":
                                 suggestions = result["result"].get("output", "")
                                 print(f"\n=== Raw suggestions from agent: ===\n{suggestions}")
                                 
-                                # Convert the suggestions into a structured format
-                                suggestions_list = []
-                                if isinstance(suggestions, str):
-                                    # Parse the text response into structured suggestions
-                                    import re
-                                    # Look for bullet points or numbered items
-                                    suggestion_items = re.split(r'\n\s*[\*\•\-]\s*|\n\d+\.\s+', suggestions)
-                                    suggestion_items = [s.strip() for s in suggestion_items if s.strip()]
-                                    
-                                    for item in suggestion_items[:2]:  # Limit to 2 suggestions
-                                        if item:
-                                            destination = item.split(" for ")[0] if " for " in item else item
-                                            description = item.split(" for ")[1] if " for " in item else ""
-                                            
-                                            print(f"\n=== Processing suggestion for {destination} ===")
-                                            
-                                            # Create suggestion with additional information
-                                            suggestion = {
-                                                "destination": destination.replace('*', '').strip(),
-                                                "description": description,
-                                                "best_time_to_visit": await get_best_time(destination),
-                                                "estimated_budget": await get_estimated_budget(destination),
-                                                "duration": "7",  # Default to a week as per user request
-                                                "weather": await get_weather(destination),
-                                                "local_tips": await get_local_tips(destination),
-                                                "hotels": await get_hotels(destination),
-                                                "flights": await get_flights(destination)
-                                            }
-                                            suggestions_list.append(suggestion)
-                                            print(f"\n=== Completed processing for {destination} ===")
-                                    
-                                return suggestions_list
-                            return []
+                                # Update session state
+                                if "session_id" in result:
+                                    st.session_state.conversation_session_id = result["session_id"]
+                                if "conversation_history" in result:
+                                    st.session_state.conversation_history = result["conversation_history"]
+                                
+                                # Check if the response contains itinerary content
+                                if request_type == "itinerary" or "day 1" in suggestions.lower() or "morning:" in suggestions.lower():
+                                    # This is an itinerary response
+                                    return {"type": "itinerary", "content": suggestions}
+                                else:
+                                    # This is a suggestions response
+                                    return {"type": "suggestions", "content": suggestions}
+                            return {"type": "error", "content": "No result found"}
                         else:
                             st.error(f"Error from agent: {response.text}")
-                            return []
+                            return {"type": "error", "content": response.text}
                 except Exception as e:
                     print(f"\n=== Error in get_suggestions: {str(e)} ===")
                     print(f"Error details: {traceback.format_exc()}")
                     st.error(f"An error occurred while generating suggestions: {str(e)}")
-                    return []
+                    return {"type": "error", "content": str(e)}
 
             async def get_weather(destination: str) -> Dict:
                 """Get weather information for the destination"""
@@ -263,7 +359,7 @@ if mode == "Get Travel Suggestions":
                     return weather_info
                 except Exception as e:
                     print(f"Error getting weather: {str(e)}")
-                    return {"error": str(e)}
+                    return {"status": "unavailable", "message": "Weather data unavailable"}
 
             async def get_local_tips(destination: str) -> List[str]:
                 """Get local tips for the destination"""
@@ -275,7 +371,7 @@ if mode == "Get Travel Suggestions":
                     return location_info.get("tips", [])
                 except Exception as e:
                     print(f"Error getting local tips: {str(e)}")
-                    return []
+                    return ["Local tips unavailable"]
 
             async def get_hotels(destination: str) -> List[Dict]:
                 """Get hotel suggestions for the destination"""
@@ -289,7 +385,7 @@ if mode == "Get Travel Suggestions":
                     return hotels[:3]  # Limit to top 3 hotels
                 except Exception as e:
                     print(f"Error getting hotels: {str(e)}")
-                    return []
+                    return [{"name": "Hotel data unavailable", "price": "N/A", "rating": "N/A", "address": "N/A", "amenities": ["Data unavailable"]}]
 
             async def get_flights(destination: str) -> List[Dict]:
                 """Get flight suggestions for the destination"""
@@ -302,7 +398,7 @@ if mode == "Get Travel Suggestions":
                     return flights[:3]  # Limit to top 3 flights
                 except Exception as e:
                     print(f"Error getting flights: {str(e)}")
-                    return []
+                    return [{"airline": "Flight data unavailable", "flight_number": "N/A", "departure": "N/A", "arrival": "N/A", "departure_time": "N/A", "arrival_time": "N/A", "price": "N/A", "duration": "N/A", "stops": "N/A"}]
 
             async def get_best_time(destination: str) -> str:
                 """Get best time to visit using ItineraryPlanner"""
@@ -319,7 +415,7 @@ if mode == "Get Travel Suggestions":
                     return best_time
                 except Exception as e:
                     print(f"Error getting best time: {str(e)}")
-                    return "Contact travel agent for details"
+                    return "Best time data unavailable"
 
             async def get_estimated_budget(destination: str) -> str:
                 """Get estimated budget using ItineraryPlanner"""
@@ -336,215 +432,147 @@ if mode == "Get Travel Suggestions":
                     return budget
                 except Exception as e:
                     print(f"Error getting estimated budget: {str(e)}")
-                    return "Varies by season"
+                    return "Budget data unavailable"
 
             # Run the async function
-            suggestions = asyncio.run(get_suggestions())
-            print(f"\n=== Got {len(suggestions)} suggestions ===")
+            result = asyncio.run(get_suggestions())
+            print(f"\n=== Got result: {result} ===")
             
-            # Display suggestions
-            if suggestions:
-                st.subheader("Travel Suggestions")
-                for i, suggestion in enumerate(suggestions, 1):
-                    print(f"\n=== Displaying suggestion {i} ===")
-                    print(f"Type: {type(suggestion)}")
-                    print(f"Content: {json.dumps(suggestion, indent=2)}")
+            # Display results based on type
+            if result["type"] == "itinerary":
+                # Display itinerary response
+                st.subheader("📝 Your Travel Itinerary")
+                st.markdown(result["content"])
+                
+                # Add some helpful information
+                st.info("💡 **Tip**: This itinerary was generated based on your preferences. You can modify the details or ask for specific changes.")
+                
+            elif result["type"] == "suggestions":
+                # Parse and display suggestions
+                suggestions = result["content"]
+                
+                # Convert the suggestions into a structured format
+                async def process_suggestions(suggestions_text):
+                    """Process suggestions and add additional information"""
+                    suggestions_list = []
+                    if isinstance(suggestions_text, str):
+                        # Parse the text response into structured suggestions
+                        import re
+                        # Look for bullet points or numbered items
+                        suggestion_items = re.split(r'\n\s*[\*\•\-]\s*|\n\d+\.\s+', suggestions_text)
+                        suggestion_items = [s.strip() for s in suggestion_items if s.strip()]
+                        
+                        for item in suggestion_items[:2]:  # Limit to 2 suggestions
+                            if item:
+                                destination = item.split(" for ")[0] if " for " in item else item
+                                description = item.split(" for ")[1] if " for " in item else ""
+                                
+                                print(f"\n=== Processing suggestion for {destination} ===")
+                                
+                                # Create suggestion with additional information
+                                suggestion = {
+                                    "destination": destination.replace('*', '').strip(),
+                                    "description": description,
+                                    "best_time_to_visit": await get_best_time(destination),
+                                    "estimated_budget": await get_estimated_budget(destination),
+                                    "duration": "7",  # Default to a week as per user request
+                                    "weather": await get_weather(destination),
+                                    "local_tips": await get_local_tips(destination),
+                                    "hotels": await get_hotels(destination),
+                                    "flights": await get_flights(destination)
+                                }
+                                suggestions_list.append(suggestion)
+                                print(f"\n=== Completed processing for {destination} ===")
                     
-                    try:
-                        st.write(f"## Suggestion {i}: {suggestion['destination']}")
+                    return suggestions_list
+                
+                # Process suggestions
+                suggestions_list = asyncio.run(process_suggestions(suggestions))
+                
+                # Display suggestions
+                if suggestions_list:
+                    st.subheader("Travel Suggestions")
+                    for i, suggestion in enumerate(suggestions_list, 1):
+                        print(f"\n=== Displaying suggestion {i} ===")
+                        print(f"Type: {type(suggestion)}")
+                        print(f"Content: {json.dumps(suggestion, indent=2)}")
                         
-                        # Basic Information
-                        st.write(f"**Description:** {suggestion['description']}")
-                        
-                        # Create three columns for key info
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.write(f"**Best Time:** {suggestion['best_time_to_visit']}")
-                        with col2:
-                            st.write(f"**Budget:** {suggestion['estimated_budget']}")
-                        with col3:
-                            st.write(f"**Duration:** {suggestion['duration']} days")
-                        
-                        # Daily Itinerary
-                        st.subheader("�� Suggested Daily Itinerary")
-                        days = {
-                            1: {
-                                "morning": "Explore iconic landmarks and main attractions",
-                                "afternoon": "Visit local museums and cultural sites",
-                                "evening": "Dinner at a local restaurant",
-                                "activities": ["City orientation tour", "Museum visits", "Local dining"]
-                            },
-                            2: {
-                                "morning": "Local market and shopping areas",
-                                "afternoon": "Park or nature area visit",
-                                "evening": "Entertainment district exploration",
-                                "activities": ["Shopping", "Nature walks", "Nightlife"]
-                            },
-                            3: {
-                                "morning": "Historical district tour",
-                                "afternoon": "Art galleries or cultural centers",
-                                "evening": "Cultural performance or show",
-                                "activities": ["Historical sites", "Art appreciation", "Cultural shows"]
-                            },
-                            4: {
-                                "morning": "Local food tour or cooking class",
-                                "afternoon": "Neighborhood exploration",
-                                "evening": "Sunset viewpoint visit",
-                                "activities": ["Food experiences", "Local life", "Photography"]
-                            },
-                            5: {
-                                "morning": "Adventure or outdoor activity",
-                                "afternoon": "Relaxation time",
-                                "evening": "Local entertainment",
-                                "activities": ["Active pursuits", "Spa/relaxation", "Entertainment"]
-                            },
-                            6: {
-                                "morning": "Special interest activities",
-                                "afternoon": "Shopping for souvenirs",
-                                "evening": "Farewell dinner",
-                                "activities": ["Personal interests", "Shopping", "Fine dining"]
-                            },
-                            7: {
-                                "morning": "Final sightseeing",
-                                "afternoon": "Last-minute activities",
-                                "evening": "Departure preparation",
-                                "activities": ["Last visits", "Packing", "Travel"]
-                            }
-                        }
-                        
-                        itinerary_tab = st.tabs([f"Day {day}" for day in range(1, 8)])
-                        for day, tab in enumerate(itinerary_tab, 1):
-                            with tab:
-                                schedule = days[day]
-                                st.write("**Morning:** " + schedule["morning"])
-                                st.write("**Afternoon:** " + schedule["afternoon"])
-                                st.write("**Evening:** " + schedule["evening"])
-                                st.write("**Suggested Activities:**")
-                                for activity in schedule["activities"]:
-                                    st.write(f"- {activity}")
-                        
-                        # Weather Information with fallback
-                        st.subheader("🌤️ Weather Information")
-                        weather = suggestion.get('weather', {})
-                        if isinstance(weather, dict) and 'error' not in weather:
+                        try:
+                            st.write(f"## Suggestion {i}: {suggestion['destination']}")
+                            
+                            # Basic Information
+                            st.write(f"**Description:** {suggestion['description']}")
+                            
+                            # Create three columns for key info
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("Temperature", f"{weather.get('temperature', 'N/A')}°C")
+                                best_time = suggestion['best_time_to_visit']
+                                if best_time == "Best time data unavailable":
+                                    st.warning("Best time data unavailable")
+                                else:
+                                    st.write(f"**Best Time:** {best_time}")
                             with col2:
-                                st.metric("Humidity", f"{weather.get('humidity', 'N/A')}%")
+                                budget = suggestion['estimated_budget']
+                                if budget == "Budget data unavailable":
+                                    st.warning("Budget data unavailable")
+                                else:
+                                    st.write(f"**Budget:** {budget}")
                             with col3:
-                                st.write(f"**Conditions:** {weather.get('description', 'N/A')}")
-                        else:
-                            st.info("Weather data currently unavailable. Please check local weather services.")
-                        
-                        # Local Tips with fallback
-                        st.subheader("💡 Local Tips")
-                        if suggestion.get('local_tips'):
-                            for tip in suggestion['local_tips']:
-                                st.write(f"- {tip}")
-                        else:
-                            default_tips = [
-                                "Research local customs and etiquette",
-                                "Keep important documents secure",
-                                "Learn basic local phrases",
-                                "Have emergency contacts handy",
-                                "Check travel advisories before departure"
-                            ]
-                            for tip in default_tips:
-                                st.write(f"- {tip}")
-                        
-                        # Accommodation with fallback
-                        st.subheader("🏨 Recommended Accommodations")
-                        if suggestion.get('hotels'):
-                            for hotel in suggestion['hotels']:
-                                st.write(f"**{hotel.get('name', 'Hotel')}**")
-                                st.write(f"- Price: {hotel.get('price', 'N/A')}")
-                                st.write(f"- Rating: {hotel.get('rating', 'N/A')}/10")
-                                st.write(f"- Address: {hotel.get('address', 'N/A')}")
-                                if hotel.get('amenities'):
-                                    st.write("- Amenities:")
-                                    for amenity in hotel['amenities']:
-                                        st.write(f"  • {amenity}")
-                        else:
-                            st.info("Search for accommodations on popular booking platforms:")
-                            st.write("- Hotels.com")
-                            st.write("- Booking.com")
-                            st.write("- Airbnb")
-                            st.write("- Local hotel websites")
-                        
-                        # Transportation with fallback
-                        st.subheader("🚗 Transportation Options")
-                        transport_options = {
-                            "Public Transport": ["Subway/Metro", "Buses", "Light Rail"],
-                            "Private Options": ["Taxis", "Ride-sharing services", "Car rentals"],
-                            "Tour Services": ["Hop-on-hop-off buses", "Guided tours", "Private drivers"]
-                        }
-                        for category, options in transport_options.items():
-                            st.write(f"**{category}:**")
-                            for option in options:
-                                st.write(f"- {option}")
-                        
-                        # Packing List
-                        st.subheader("🎒 Suggested Packing List")
-                        packing_categories = {
-                            "Essential Documents": [
-                                "Passport/ID",
-                                "Travel insurance",
-                                "Booking confirmations",
-                                "Emergency contacts"
-                            ],
-                            "Clothing": [
-                                "Weather-appropriate attire",
-                                "Comfortable walking shoes",
-                                "Formal wear for nice restaurants",
-                                "Swimming gear if applicable"
-                            ],
-                            "Electronics": [
-                                "Phone and charger",
-                                "Camera",
-                                "Power adapter",
-                                "Portable power bank"
-                            ],
-                            "Health & Safety": [
-                                "Medications",
-                                "First aid kit",
-                                "Face masks",
-                                "Hand sanitizer"
-                            ]
-                        }
-                        packing_tabs = st.tabs(list(packing_categories.keys()))
-                        for tab, (category, items) in zip(packing_tabs, packing_categories.items()):
-                            with tab:
-                                for item in items:
-                                    st.write(f"- {item}")
-                        
-                        # Safety Information
-                        st.subheader("🛡️ Safety Information")
-                        st.write("**General Safety Tips:**")
-                        safety_tips = [
-                            "Keep valuables in hotel safe",
-                            "Be aware of your surroundings",
-                            "Use reputable transportation",
-                            "Keep emergency numbers handy",
-                            "Follow local health guidelines"
-                        ]
-                        for tip in safety_tips:
-                            st.write(f"- {tip}")
-                        
-                        # Emergency Contacts
-                        st.subheader("☎️ Emergency Contacts")
-                        st.write("- Local Emergency: 911 (US)")
-                        st.write("- Tourist Police: Check local numbers")
-                        st.write("- Nearest Embassy/Consulate: Research before travel")
-                        st.write("- Travel Insurance 24/7 Helpline: Add your provider's number")
-                        
-                        st.divider()  # Add a visual separator between suggestions
+                                st.write(f"**Duration:** {suggestion['duration']} days")
+                            
+                            # Display additional information in expandable sections
+                            with st.expander("🌤️ Weather Information"):
+                                if isinstance(suggestion['weather'], dict):
+                                    if suggestion['weather'].get('status') == 'unavailable':
+                                        st.warning("Weather data unavailable")
+                                    else:
+                                        st.write(f"**Temperature:** {suggestion['weather'].get('temperature', 'N/A')}°C")
+                                        st.write(f"**Conditions:** {suggestion['weather'].get('description', 'N/A')}")
+                                        st.write(f"**Humidity:** {suggestion['weather'].get('humidity', 'N/A')}%")
+                                else:
+                                    st.warning("Weather data unavailable")
+                            
+                            with st.expander("💡 Local Tips"):
+                                if suggestion['local_tips'] and suggestion['local_tips'][0] == "Local tips unavailable":
+                                    st.warning("Local tips unavailable")
+                                else:
+                                    for tip in suggestion['local_tips']:
+                                        st.write(f"• {tip}")
+                            
+                            with st.expander("🏨 Hotel Options"):
+                                if suggestion['hotels'] and suggestion['hotels'][0].get('name') == "Hotel data unavailable":
+                                    st.warning("Hotel data unavailable")
+                                else:
+                                    for hotel in suggestion['hotels']:
+                                        st.write(f"**{hotel['name']}** - {hotel['price']} ({hotel['rating']})")
+                                        st.write(f"*{hotel['address']}*")
+                                        st.write("Amenities: " + ", ".join(hotel['amenities']))
+                                        st.divider()
+                            
+                            with st.expander("✈️ Flight Options"):
+                                if suggestion['flights'] and suggestion['flights'][0].get('airline') == "Flight data unavailable":
+                                    st.warning("Flight data unavailable")
+                                else:
+                                    for flight in suggestion['flights']:
+                                        st.write(f"**{flight['airline']}** - Flight {flight.get('flight_number', 'N/A')}")
+                                        st.write(f"**{flight['departure']} → {flight['arrival']}**")
+                                        st.write(f"**{flight['departure_time']} - {flight['arrival_time']}** ({flight['duration']})")
+                                        st.write(f"**Price:** {flight['price']} | **Stops:** {flight['stops']}")
+                                        st.divider()
+                            
+                            st.divider()  # Add a visual separator between suggestions
+                            
+                        except Exception as e:
+                            st.error(f"Error displaying suggestion {i}: {str(e)}")
+                            print(f"Error details: {traceback.format_exc()}")
+                else:
+                    st.warning("No structured suggestions found. Here's the raw response:")
+                    st.markdown(suggestions)
                     
-                    except Exception as e:
-                        st.error(f"Error displaying suggestion {i}: {str(e)}")
-                        print(f"Error details: {traceback.format_exc()}")
+            elif result["type"] == "error":
+                st.error(f"An error occurred: {result['content']}")
             else:
-                st.error("No suggestions were generated. Please try again with different preferences.")
+                st.error("Unexpected response type received.")
 
 else:  # Create Detailed Itinerary
     st.header("📝 Create Detailed Itinerary")
@@ -584,89 +612,130 @@ else:  # Create Detailed Itinerary
                 }
                 
                 # Use MCP server's agent to create itinerary
-                response = asyncio.run(
-                    mcp_server.app.post("/agent/execute", json={
-                        "query": f"Create a detailed itinerary for a trip from {origin} to {destination}",
-                        "context": context
-                    })
-                )
+                async def create_itinerary():
+                    async with httpx.AsyncClient() as client:
+                        request_data = {
+                            "query": f"Create a detailed itinerary for a trip from {origin} to {destination}",
+                            "context": context,
+                            "session_id": st.session_state.conversation_session_id,
+                            "conversation_history": st.session_state.conversation_history
+                        }
+                        response = await client.post(
+                            f"{AGENT_URL}/agent/execute",
+                            json=request_data,
+                            timeout=30.0
+                        )
+                        return response.json()
                 
-                itinerary = response.json()["result"]["output"]
+                result = asyncio.run(create_itinerary())
                 
-                # Display itinerary
-                st.subheader(f"📍 {itinerary.destination}")
-                st.write(f"**Duration:** {itinerary.total_days} days")
-                st.write(f"**Total Budget:** ${itinerary.total_cost:.2f}")
-                
-                # Display flights
-                if itinerary.flights:
-                    with st.expander("✈️ Flight Details"):
-                        for flight in itinerary.flights:
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write(f"**{flight['airline']}** - Flight {flight.get('flight_number', 'N/A')}")
-                                st.write(f"From: {flight['departure']} To: {flight['arrival']}")
-                            with col2:
-                                st.write(f"Date: {flight['date']}")
-                                st.write(f"Price: ${flight['price']}")
-                                if 'departure_time' in flight:
-                                    st.write(f"Departure: {flight['departure_time']}")
-                                if 'arrival_time' in flight:
-                                    st.write(f"Arrival: {flight['arrival_time']}")
-                                if 'duration' in flight:
-                                    st.write(f"Duration: {flight['duration']}")
-                                if 'stops' in flight:
-                                    st.write(f"Stops: {flight['stops']}")
-                            st.divider()
-                
-                # Display hotels
-                if itinerary.hotels:
-                    print(f"Itinerary hotels: {itinerary.hotels}")
-                    with st.expander("🏨 Hotel Options"):
-                        for hotel in itinerary.hotels:
-                            st.write(f"**{hotel['name']}**")
-                            st.write(f"Rating: {hotel['rating']}/10")
-                            st.write(f"Price: {hotel['price']}")
-                            st.write(f"Address: {hotel['address']}")
-                            st.write("Amenities:", ", ".join(hotel['amenities']))
-                            st.divider()
-                
-                # Display daily plans
-                st.subheader("📅 Daily Schedule")
-                for plan in itinerary.daily_plans:
-                    with st.expander(f"Day {plan['day']} - {plan['date']}"):
-                        st.write("**Morning:**", plan['morning'])
-                        st.write("**Afternoon:**", plan['afternoon'])
-                        st.write("**Evening:**", plan['evening'])
-                        st.write("**Meals:**", ", ".join(plan['meals']))
-                        st.write(f"**Estimated Cost:** {plan['estimated_cost']}")
-                
-                # Display additional information
-                col3, col4 = st.columns(2)
-                
-                with col3:
-                    with st.expander("🎒 Packing List"):
-                        for item in itinerary.packing_list:
-                            st.write(f"- {item}")
-                
-                with col4:
-                    with st.expander("ℹ️ Important Notes"):
-                        for note in itinerary.important_notes:
-                            st.write(f"- {note}")
-                
-                # Display emergency contacts
-                with st.expander("🆘 Emergency Contacts"):
-                    for contact in itinerary.emergency_contacts:
-                        st.write(f"**{contact['service']}:** {contact['number']}")
-                
-                # Get and display region-specific tips
-                tips = TravelUtils.get_travel_tips_by_region(destination)
-                with st.expander("💡 Local Tips"):
-                    for tip in tips:
-                        st.write(f"- {tip}")
+                if result.get("status") == "success":
+                    # Update session state
+                    if "session_id" in result:
+                        st.session_state.conversation_session_id = result["session_id"]
+                    if "conversation_history" in result:
+                        st.session_state.conversation_history = result["conversation_history"]
+                    
+                    itinerary_response = result["result"].get("output", "")
+                    
+                    # Display itinerary
+                    st.subheader("📝 Your Travel Itinerary")
+                    st.markdown(itinerary_response)
+                    
+                    # Add some helpful information
+                    st.info("💡 **Tip**: You can ask follow-up questions below to modify or get more details about your itinerary.")
+                else:
+                    st.error("Failed to create itinerary")
 
             except Exception as e:
                 st.error(f"An error occurred while creating the itinerary: {str(e)}")
+
+# Add chat interface for follow-up questions
+st.markdown("---")
+st.subheader("💬 Ask Follow-up Questions")
+
+# Show conversation context if available
+if st.session_state.conversation_history:
+    with st.expander("📋 Conversation Context"):
+        st.write("**Recent conversation summary:**")
+        recent_messages = st.session_state.conversation_history[-4:]  # Show last 4 messages
+        for msg in recent_messages:
+            role_icon = "��" if msg["role"] == "user" else "🤖"
+            st.write(f"{role_icon} **{msg['role'].title()}:** {msg['content'][:100]}{'...' if len(msg['content']) > 100 else ''}")
+
+# Example follow-up questions
+with st.expander("💡 Example Follow-up Questions"):
+    st.write("Try asking questions like:")
+    example_questions = [
+        "Can you add more details about the restaurants?",
+        "What about transportation options?",
+        "Can you suggest alternative activities?",
+        "What's the weather like during that time?",
+        "Can you modify the itinerary for a different budget?",
+        "What are the best photo spots?",
+        "Can you add more cultural activities?",
+        "What about safety considerations?"
+    ]
+    for question in example_questions:
+        st.write(f"• {question}")
+
+# Chat input
+follow_up_question = st.text_input(
+    "Ask a follow-up question about your travel plans...",
+    placeholder="e.g., 'Can you add more details about the restaurants?' or 'What about transportation options?'",
+    key="follow_up_input"
+)
+
+if st.button("Send Follow-up", key="send_follow_up"):
+    if follow_up_question.strip():
+        with st.spinner("Processing your follow-up question..."):
+            try:
+                # Create context with current preferences
+                context = {
+                    "preferences": preferences.model_dump(exclude_none=True),
+                    "mode": "follow_up"
+                }
+                
+                # Prepare request with conversation state
+                request_data = {
+                    "query": follow_up_question,
+                    "context": context,
+                    "session_id": st.session_state.conversation_session_id,
+                    "conversation_history": st.session_state.conversation_history
+                }
+                
+                # Send follow-up question
+                async def send_follow_up():
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(
+                            f"{AGENT_URL}/agent/execute",
+                            json=request_data,
+                            timeout=30.0
+                        )
+                        return response.json()
+                
+                result = asyncio.run(send_follow_up())
+                
+                if result.get("status") == "success":
+                    # Update session state
+                    if "session_id" in result:
+                        st.session_state.conversation_session_id = result["session_id"]
+                    if "conversation_history" in result:
+                        st.session_state.conversation_history = result["conversation_history"]
+                    
+                    # Display the response
+                    response_content = result["result"].get("output", "")
+                    st.markdown("**AI Response:**")
+                    st.markdown(response_content)
+                    
+                    # Clear the input
+                    st.session_state.follow_up_input = ""
+                    st.rerun()
+                else:
+                    st.error("Failed to process follow-up question")
+                    
+            except Exception as e:
+                st.error(f"Error processing follow-up: {str(e)}")
 
 # Footer
 st.markdown("---")

@@ -33,93 +33,59 @@ class FlightSearchTool(BaseTravelTool):
         Search for flights using Fly Scraper API through RapidAPI.
         """
         if not self.api_key:
-            return self._get_default_flights(origin, destination, date)
+            raise Exception("RapidAPI key not available for flight search")
             
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {
                     'X-RapidAPI-Key': self.api_key,
-                    'X-RapidAPI-Host': 'fly-scraper.p.rapidapi.com'
+                    'X-RapidAPI-Host': 'skyscanner-api.p.rapidapi.com'
                 }
                 
                 # Convert city names to SkyID format
-                origin_sky_id = self._convert_to_sky_id(origin)
-                destination_sky_id = self._convert_to_sky_id(destination)
+                origin_id = self._convert_to_sky_id(origin)
+                destination_id = self._convert_to_sky_id(destination)
                 
-                url = "https://fly-scraper.p.rapidapi.com/flights/search-one-way"
+                # Format date for API
+                date_str = date.strftime('%Y-%m-%d')
+                
+                url = "https://skyscanner-api.p.rapidapi.com/v3e/browse/en-GB"
                 params = {
-                    'originSkyId': origin_sky_id,
-                    'destinationSkyId': destination_sky_id,
-                    'date': date.strftime('%Y-%m-%d')
+                    'originSkyId': origin_id,
+                    'destinationSkyId': destination_id,
+                    'date': date_str
                 }
                 
                 async with session.get(url, headers=headers, params=params) as response:
                     if response.status != 200:
-                        return self._get_default_flights(origin, destination, date)
-                    
+                        raise Exception(f"Flight API returned status {response.status}")
+                        
                     data = await response.json()
                     flights = []
                     
-                    if data.get('data', {}).get('flights'):
-                        for flight_data in data['data']['flights']:
-                            if isinstance(flight_data, dict):  # Ensure flight_data is a valid dictionary
-                                flight = {
-                                    'date': date.strftime('%Y-%m-%d'),
-                                    'price': flight_data.get('price', {}).get('amount', 'Price Not Available'),
-                                    'airline': flight_data.get('airline', {}).get('name', 'Airline Not Available'),
-                                    'flight_number': str(flight_data.get('flightNumber', '')),
-                                    'departure': origin,
-                                    'arrival': destination,
-                                    'departure_time': flight_data.get('departureTime', 'Time Not Available'),
-                                    'arrival_time': flight_data.get('arrivalTime', 'Time Not Available'),
-                                    'duration': flight_data.get('duration', 'Duration Not Available'),
-                                    'stops': flight_data.get('stops', 0)
-                                }
-                                flights.append(flight)
+                    if data.get('itineraries', {}).get('results'):
+                        for itinerary in data['itineraries']['results']:
+                            if isinstance(itinerary, dict) and itinerary.get('pricingOptions'):
+                                # Get the first pricing option
+                                pricing = itinerary['pricingOptions'][0]
+                                if isinstance(pricing, dict):
+                                    flights.append({
+                                        'airline': pricing.get('agents', [{}])[0].get('name', 'Unknown Airline'),
+                                        'flight_number': 'N/A',  # Not available in this API
+                                        'departure': origin,
+                                        'arrival': destination,
+                                        'departure_time': 'N/A',  # Not available in this API
+                                        'arrival_time': 'N/A',    # Not available in this API
+                                        'price': f"${pricing.get('price', {}).get('amount', 'N/A')}",
+                                        'duration': 'N/A',        # Not available in this API
+                                        'stops': itinerary.get('legs', [{}])[0].get('stopCount', 0)
+                                    })
                     
-                    return flights if flights else self._get_default_flights(origin, destination, date)
+                    return flights
                     
         except Exception as e:
             print(f"Flight API error: {str(e)}")
-            return self._get_default_flights(origin, destination, date)
-    
-    def _get_default_flights(self, origin: str, destination: str, date: str) -> List[Dict]:
-        """Get default flight suggestions when API fails."""
-        return [
-            {
-                'airline': 'Major Airline 1',
-                'flight_number': 'MA101',
-                'departure': origin,
-                'arrival': destination,
-                'departure_time': '09:00 AM',
-                'arrival_time': '11:00 AM',
-                'price': '$300-400',
-                'duration': '2h 00m',
-                'stops': 0
-            },
-            {
-                'airline': 'Major Airline 2',
-                'flight_number': 'MA202',
-                'departure': origin,
-                'arrival': destination,
-                'departure_time': '02:00 PM',
-                'arrival_time': '04:00 PM',
-                'price': '$250-350',
-                'duration': '2h 00m',
-                'stops': 0
-            },
-            {
-                'airline': 'Budget Airline',
-                'flight_number': 'BA303',
-                'departure': origin,
-                'arrival': destination,
-                'departure_time': '07:00 PM',
-                'arrival_time': '09:00 PM',
-                'price': '$200-300',
-                'duration': '2h 00m',
-                'stops': 1
-            }
-        ]
+            raise Exception(f"Unable to retrieve flight data: {str(e)}")
     
     def _convert_to_sky_id(self, city: str) -> str:
         """
@@ -144,7 +110,7 @@ class HotelSearchTool(BaseTravelTool):
         Search for hotels using Hotels.com API through RapidAPI (free tier).
         """
         if not self.api_key:
-            return self._get_default_hotels(location)
+            raise Exception("RapidAPI key not available for hotel search")
             
         try:
             async with aiohttp.ClientSession() as session:
@@ -163,11 +129,11 @@ class HotelSearchTool(BaseTravelTool):
                 
                 async with session.get(location_url, headers=headers, params=location_params) as response:
                     if response.status != 200:
-                        return self._get_default_hotels(location)
+                        raise Exception(f"Hotel location API returned status {response.status}")
                         
                     location_data = await response.json()
                     if not location_data.get('suggestions', []):
-                        return self._get_default_hotels(location)
+                        raise Exception(f"No location found for: {location}")
                     
                     # Get the first location ID
                     location_id = None
@@ -178,7 +144,7 @@ class HotelSearchTool(BaseTravelTool):
                                 break
                     
                     if not location_id:
-                        return self._get_default_hotels(location)
+                        raise Exception(f"Could not find location ID for: {location}")
                     
                     # Search for hotels with proper error handling
                     properties_url = "https://hotels4.p.rapidapi.com/properties/v2/list"
@@ -205,7 +171,7 @@ class HotelSearchTool(BaseTravelTool):
                     
                     async with session.post(properties_url, headers=headers, json=payload) as response:
                         if response.status != 200:
-                            return self._get_default_hotels(location)
+                            raise Exception(f"Hotel search API returned status {response.status}")
                             
                         hotels_data = await response.json()
                         hotels = []
@@ -222,37 +188,11 @@ class HotelSearchTool(BaseTravelTool):
                                         'amenities': [amenity.get('text', '') for amenity in hotel.get('amenities', [])[:5] if isinstance(amenity, dict)]
                                     })
                         
-                        return hotels if hotels else self._get_default_hotels(location)
+                        return hotels
                         
         except Exception as e:
             print(f"Hotel API error: {str(e)}")
-            return self._get_default_hotels(location)
-    
-    def _get_default_hotels(self, location: str) -> List[Dict]:
-        """Get default hotel suggestions when API fails."""
-        return [
-            {
-                'name': f'Luxury Hotel in {location}',
-                'price': '$200-300 per night',
-                'rating': '4.5/5',
-                'address': 'City Center Area',
-                'amenities': ['Pool', 'Spa', 'Restaurant', 'Gym', 'Free Wi-Fi']
-            },
-            {
-                'name': f'Boutique Hotel in {location}',
-                'price': '$150-200 per night',
-                'rating': '4.3/5',
-                'address': 'Historic District',
-                'amenities': ['Unique Design', 'Restaurant', 'Bar', 'Room Service', 'Free Wi-Fi']
-            },
-            {
-                'name': f'Business Hotel in {location}',
-                'price': '$180-250 per night',
-                'rating': '4.4/5',
-                'address': 'Business District',
-                'amenities': ['Business Center', 'Meeting Rooms', 'Restaurant', 'Gym', 'Free Wi-Fi']
-            }
-        ]
+            raise Exception(f"Unable to retrieve hotel data: {str(e)}")
 
 class WeatherTool(BaseTravelTool):
     async def execute(self, location: str, date: datetime) -> Dict:
@@ -308,7 +248,7 @@ class LocationInfoTool(BaseTravelTool):
             # Get location coordinates
             loc = self.geolocator.geocode(location)
             if not loc:
-                return {"tips": self._get_default_tips(location)}
+                raise Exception(f"Location not found: {location}")
             
             # Simplified query for better reliability
             query = f"""
@@ -332,22 +272,12 @@ class LocationInfoTool(BaseTravelTool):
                         tips.append(f"Visit {name}")
             
             if not tips:
-                tips = self._get_default_tips(location)
+                raise Exception(f"No points of interest found for: {location}")
             
             return {"tips": tips}
         except Exception as e:
             print(f"Location API error: {str(e)}")
-            return {"tips": self._get_default_tips(location)}
-    
-    def _get_default_tips(self, location: str) -> List[str]:
-        """Get default tips when API fails."""
-        return [
-            f"Research popular attractions in {location}",
-            "Check local event calendars for your travel dates",
-            "Look up local transportation options",
-            "Find highly-rated local restaurants",
-            "Consider guided tours for the best experience"
-        ]
+            raise Exception(f"Unable to retrieve location information: {str(e)}")
 
 @st.cache_resource
 def get_cached_pipeline(model_id: str = "microsoft/phi-2"):
@@ -366,7 +296,7 @@ class ItineraryPlannerTool(BaseTravelTool):
         self.api_key = openrouter_api_key
         self.site_url = site_url or "http://localhost:8501"
         self.site_name = site_name or "AI Travel Planner"
-        self.model = "meta-llama/llama-2-70b-chat"  # Using Llama 2 70B through OpenRouter
+        self.model = "meta-llama/llama-3.3-8b-instruct:free"  # Using Llama 2 70B through OpenRouter
 
     async def execute(self, location: str, duration: int, preferences: Dict) -> List[Dict]:
         """Execute the planning tool"""
@@ -484,17 +414,7 @@ class ItineraryPlannerTool(BaseTravelTool):
                 
         except Exception as e:
             logger.log_error(e, "ItineraryPlannerTool.execute")
-            fallback = [{
-                "destination": location if location != "multiple" else "Popular Destination",
-                "description": "A fascinating destination worth exploring.",
-                "duration": str(duration),
-                "activities": ["Local sightseeing", "Cultural experiences"],
-                "accommodation_suggestions": ["Local hotels"],
-                "transportation": ["Public transport"],
-                "local_tips": ["Research local customs"]
-            }]
-            logger.log_info("Using fallback suggestion", {"fallback": fallback})
-            return fallback
+            raise Exception(f"Unable to generate travel suggestions: {str(e)}")
     
     def _validate_suggestions(self, suggestions: List[Dict]) -> List[Dict]:
         """Validate and fix suggestions to ensure they meet requirements"""

@@ -19,8 +19,7 @@ class FlightSearchTool(BaseTravelTool):
         Search for flights using Fly Scraper API through RapidAPI.
         """
         if not self.api_key:
-            print("No API key provided")
-            return self._get_default_flights(origin, destination, date)
+            raise Exception("RapidAPI key not available for flight search")
             
         try:
             async with aiohttp.ClientSession() as session:
@@ -50,9 +49,7 @@ class FlightSearchTool(BaseTravelTool):
                 
                 async with session.get(url, headers=headers, params=params) as response:
                     if response.status != 200:
-                        print(f"Error: {response.status}")
-                        print(f"Error: {response.text}")
-                        # return self._get_default_flights(origin, destination, date)
+                        raise Exception(f"Flight API returned status {response.status}: {response.text}")
                     
                     data = await response.json()
                     flights = []
@@ -74,11 +71,11 @@ class FlightSearchTool(BaseTravelTool):
                                 }
                                 flights.append(flight)
                     print(f"Flights: {flights}")
-                    return flights if flights else self._get_default_flights(origin, destination, date)
+                    return flights
                     
         except Exception as e:
             print(f"Flight API error: {str(e)}")
-            return self._get_default_flights(origin, destination, date)
+            raise Exception(f"Unable to retrieve flight data: {str(e)}")
         
     async def _get_sky_id(self, city: str) -> str:
         """Get SkyID for a city."""
@@ -94,8 +91,7 @@ class FlightSearchTool(BaseTravelTool):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers, params=params) as response:
                     if response.status != 200:
-                        print(f"Error: {response.status}")
-                        return self._convert_to_sky_id(city)  # fallback to simple conversion
+                        raise Exception(f"Airport API returned status {response.status}")
                     
                     data = await response.json()
                     print(f"API Response: {data}")
@@ -106,50 +102,12 @@ class FlightSearchTool(BaseTravelTool):
                         if first_airport.get('skyId'):
                             return first_airport['skyId']
                     
-                    # If no valid airport code found, fall back to simple conversion
-                    return self._convert_to_sky_id(city)
+                    # If no valid airport code found, raise exception
+                    raise Exception(f"No valid airport code found for: {city}")
         except Exception as e:
             print(f"Error getting sky id: {str(e)}")
-            return self._convert_to_sky_id(city)  # fallback to simple conversion
+            raise Exception(f"Unable to get airport code for: {city}")
 
-    def _get_default_flights(self, origin: str, destination: str, date: str) -> List[Dict]:
-        """Get default flight suggestions when API fails."""
-        return [
-            {
-                'airline': 'Major Airline 1',
-                'flight_number': 'MA101',
-                'departure': origin,
-                'arrival': destination,
-                'departure_time': '09:00 AM',
-                'arrival_time': '11:00 AM',
-                'price': '$300-400',
-                'duration': '2h 00m',
-                'stops': 0
-            },
-            {
-                'airline': 'Major Airline 2',
-                'flight_number': 'MA202',
-                'departure': origin,
-                'arrival': destination,
-                'departure_time': '02:00 PM',
-                'arrival_time': '04:00 PM',
-                'price': '$250-350',
-                'duration': '2h 00m',
-                'stops': 0
-            },
-            {
-                'airline': 'Budget Airline',
-                'flight_number': 'BA303',
-                'departure': origin,
-                'arrival': destination,
-                'departure_time': '07:00 PM',
-                'arrival_time': '09:00 PM',
-                'price': '$200-300',
-                'duration': '2h 00m',
-                'stops': 1
-            }
-        ]
-    
     def _convert_to_sky_id(self, city: str) -> str:
         """
         Convert city name to SkyID format.

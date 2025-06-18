@@ -423,13 +423,7 @@ Return exactly 2 destinations in a JSON array with detailed, specific informatio
             
         except Exception as e:
             logger.log_error(e, "SmartTravelAgent._generate_suggestions")
-            # Create two fallback suggestions in case of error
-            fallback_suggestions = [
-                self._create_fallback_suggestion(f"Popular Travel Destination {i+1}", preferences, duration)
-                for i in range(2)
-            ]
-            logger.log_info("Using fallback suggestions", {"suggestions": fallback_suggestions})
-            return fallback_suggestions
+            raise Exception(f"Unable to generate travel suggestions: {str(e)}")
     
     def _create_fallback_suggestion(self, text: str, preferences: TravelPreferences, duration: int = 5) -> TravelSuggestion:
         """Create a fallback suggestion with preference-aware defaults"""
@@ -534,56 +528,7 @@ Return exactly 2 destinations in a JSON array with detailed, specific informatio
             )
             
         except json.JSONDecodeError:
-            # Fallback itinerary
-            daily_plans = []
-            for day in range(1, days + 1):
-                daily_plans.append({
-                    "day": day,
-                    "date": f"Day {day}",
-                    "morning": "Explore local attractions",
-                    "afternoon": "Cultural activities or sightseeing",
-                    "evening": "Dinner and relaxation",
-                    "meals": ["Local breakfast", "Local lunch", "Local dinner"],
-                    "estimated_cost": "50-100 USD"
-                })
-            
-            return Itinerary(
-                travel_request=TravelRequest(
-                    origin="",
-                    destination=destination,
-                    start_date=datetime.now(),
-                    end_date=datetime.now(),
-                    num_travelers=preferences.group_size,
-                    preferences=preferences.__dict__,
-                    budget=None
-                ),
-                flights=[],
-                hotels=[],
-                activities=[],
-                total_cost=0,
-                destination=destination,
-                total_days=days,
-                total_budget="Varies based on preferences",
-                daily_plans=daily_plans,
-                accommodation_details=[{
-                    "name": "Recommended accommodation",
-                    "type": "Hotel",
-                    "location": "City center",
-                    "price_range": "100-200 USD/night",
-                    "amenities": ["WiFi", "Breakfast", "AC"]
-                }],
-                transportation_details=[{
-                    "type": "Local transport",
-                    "details": "Use public transportation or walking",
-                    "cost": "10-20 USD/day"
-                }],
-                emergency_contacts=[{
-                    "service": "Emergency Services",
-                    "number": "Check local emergency numbers"
-                }],
-                packing_list=["Comfortable shoes", "Weather-appropriate clothing", "Travel documents", "Camera", "Medications"],
-                important_notes=["Check visa requirements", "Research local customs", "Keep copies of important documents"]
-            )
+            raise Exception("Unable to parse itinerary data from response")
     
     def _build_context(self, processed_input: ProcessedInput, preferences: TravelPreferences) -> str:
         """Build context string for AI model"""
