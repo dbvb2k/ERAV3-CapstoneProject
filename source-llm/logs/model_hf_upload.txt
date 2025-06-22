@@ -1,0 +1,35 @@
+ubuntu@ip-172-31-2-217:~/bigdata/SmolLM2-Pre-Training/hf_deployment$ python upload_model.py
+🤗 HuggingFace Model Upload Script
+==================================================
+Model Path: /home/ubuntu/bigdata/SmolLM2-Pre-Training/model/cosmopedia-v2-1B/smollm-1.7B-cosmo-1B-production/final_model
+Model ID: saish-shetty/SmolLM2-1.7B-pre-trained
+==================================================
+🔐 Setting up HuggingFace authentication...
+✅ HuggingFace token found
+🔍 Validating model at /home/ubuntu/bigdata/SmolLM2-Pre-Training/model/cosmopedia-v2-1B/smollm-1.7B-cosmo-1B-production/final_model...
+🔄 Testing model loading...
+Loading checkpoint shards: 100%|█████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00, 64.09it/s]
+✅ Model validation successful!
+   - Parameters: 1,711,376,384
+   - Vocab size: 49,152
+   - Model type: llama
+📊 Found training log: /home/ubuntu/bigdata/SmolLM2-Pre-Training/model/cosmopedia-v2-1B/smollm-1.7B-cosmo-1B-production/training_log.md
+🚀 Starting upload to saish-shetty/SmolLM2-1.7B-pre-trained...
+📁 Creating repository...
+✅ Repository created/verified
+📝 Creating model card...
+⬆️ Uploading model files...
+model-00002-of-00002.safetensors: 100%|███████████████████████████████████████████████████████████████████| 1.64G/1.64G [00:55<00:00, 29.7MB/s]
+model-00001-of-00002.safetensors: 100%|███████████████████████████████████████████████████████████████████| 1.78G/1.78G [00:57<00:00, 30.9MB/s]
+Upload 2 LFS files: 100%|████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:58<00:00, 29.01s/it]
+🎉 Model uploaded successfully!██████████████████████████████████████                                            | 1/2 [00:58<00:58, 58.01s/it]
+🔗 Model URL: https://huggingface.co/saish-shetty/SmolLM2-1.7B-pre-trained
+
+🎉 Upload completed successfully!
+🔗 Your model: https://huggingface.co/saish-shetty/SmolLM2-1.7B-pre-trained
+
+📚 Next steps:
+1. Check the model page on HuggingFace
+2. Test the model online
+3. Share with the community!
+ubuntu@ip-172-31-2-217:~/bigdata/SmolLM2-Pre-Training/hf_deployment$ 
