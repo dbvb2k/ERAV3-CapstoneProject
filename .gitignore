@@ -1,4 +1,4 @@
 *.pyc
 __pycache__/
 .env
-*.json
+agentic_ai/logs/

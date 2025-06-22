@@ -1,0 +1,77 @@
+# AI Travel Planner - Environment Variables Template
+# Copy this file to .env and fill in your actual API keys
+
+# =============================================================================
+# REQUIRED API KEYS
+# =============================================================================
+
+# OpenRouter API Key (Required)
+# Get your free API key from: https://openrouter.ai/
+# Used for AI-powered travel suggestions and itinerary generation
+OPENROUTER_API_KEY=sk-or-v1-your_openrouter_api_key_here
+
+# RapidAPI Key (Optional but Recommended)
+# Get your free API key from: https://rapidapi.com/
+# Subscribe to: Skyscanner API and Hotels.com API
+# Used for flight and hotel search functionality
+RAPID_API_KEY=your_rapidapi_key_here
+
+# =============================================================================
+# OPTIONAL CONFIGURATION
+# =============================================================================
+
+# Site URL (Optional)
+# Default: http://localhost:8501
+# Used for generating shareable links
+# Set to your deployment URL in production
+SITE_URL=http://localhost:8501
+
+# Site Name (Optional)
+# Default: AI Travel Planner
+# Used for branding in generated content
+SITE_NAME=AI Travel Planner
+
+# =============================================================================
+# API KEY SETUP INSTRUCTIONS
+# =============================================================================
+
+# 1. OPENROUTER_API_KEY:
+#    - Visit: https://openrouter.ai/
+#    - Sign up for a free account
+#    - Go to your dashboard
+#    - Generate a new API key
+#    - Copy the key (starts with 'sk-or-v1-')
+#    - Replace the placeholder above
+
+# 2. RAPID_API_KEY:
+#    - Visit: https://rapidapi.com/
+#    - Create a free account
+#    - Subscribe to these APIs:
+#      * Skyscanner API (for flight search)
+#      * Hotels.com API (for hotel search)
+#    - Get your RapidAPI key from dashboard
+#    - Replace the placeholder above
+
+# =============================================================================
+# SECURITY NOTES
+# =============================================================================
+
+# ⚠️  IMPORTANT: Never commit your actual .env file to version control
+# ⚠️  Keep your API keys secure and rotate them regularly
+# ⚠️  Monitor your API usage to avoid unexpected charges
+# ⚠️  Use environment variables for all sensitive configuration
+
+# =============================================================================
+# USAGE LIMITS (Free Tiers)
+# =============================================================================
+
+# OpenRouter API:
+# - 10,000 requests/month
+# - 10 requests/second rate limit
+# - Model: Llama 3.3 8B (free tier)
+
+# RapidAPI:
+# - Skyscanner: 100 requests/month
+# - Hotels.com: 500 requests/month
+# -Fly scrapper API (for hotels, flight search)  
+# - Rate limits vary by API 
