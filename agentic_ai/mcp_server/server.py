@@ -281,21 +281,24 @@ IMPORTANT:
         # Create the agent executor with memory
         self.agent_executor = AgentExecutor.from_agent_and_tools(
             agent=agent,
-            tools=tools,
-            verbose=True,
+            tools=tools,            verbose=True,
             handle_parsing_errors=True,
             max_iterations=3
         )
-
+    
     def run(self, host: str = "0.0.0.0", port: int = 8000):
         """Run the MCP server."""
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
         uvicorn.run(self.app, host=host, port=port)
+    
+    def run_async(self, host: str = "0.0.0.0", port: int = 8000):
+        """Run the MCP server asynchronously."""
+        config = uvicorn.Config(self.app, host=host, port=port, log_level="info")
+        server = uvicorn.Server(config)
+        
+        # Use asyncio to run the server
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(server.serve())
 
 if __name__ == "__main__":
     server = MCPServer()

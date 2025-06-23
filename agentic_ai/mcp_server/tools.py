@@ -4,7 +4,7 @@ LangChain tools implementation for the travel planner.
 
 from langchain.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Type
 from tools.travel_tools import ItineraryPlannerTool
 from tools.travel_utils import TravelUtils
 
@@ -34,9 +34,9 @@ def create_langchain_tools(travel_utils: TravelUtils, itinerary_planner: Itinera
     """Create LangChain tools from our existing travel tools."""
     
     class FlightSearchTool(BaseTool):
-        name = "flight_search"
-        description = "Search for flights between cities"
-        args_schema = FlightSearchInput
+        name: str = "flight_search"
+        description: str = "Search for flights between cities"
+        args_schema: Type[BaseModel] = FlightSearchInput
         
         def _run(self, origin: str, destination: str, date: str, num_passengers: int = 1) -> Dict[str, Any]:
             return travel_utils.search_flights(origin, destination, date, num_passengers)
@@ -45,9 +45,9 @@ def create_langchain_tools(travel_utils: TravelUtils, itinerary_planner: Itinera
             return await travel_utils.search_flights_async(origin, destination, date, num_passengers)
 
     class HotelSearchTool(BaseTool):
-        name = "hotel_search"
-        description = "Search for hotels in a city"
-        args_schema = HotelSearchInput
+        name: str = "hotel_search"
+        description: str = "Search for hotels in a city"
+        args_schema: Type[BaseModel] = HotelSearchInput
         
         def _run(self, city: str, check_in: str, check_out: str, guests: int = 1) -> Dict[str, Any]:
             return travel_utils.search_hotels(city, check_in, check_out, guests)
@@ -56,9 +56,9 @@ def create_langchain_tools(travel_utils: TravelUtils, itinerary_planner: Itinera
             return await travel_utils.search_hotels_async(city, check_in, check_out, guests)
 
     class WeatherInfoTool(BaseTool):
-        name = "weather_info"
-        description = "Get weather information for a location"
-        args_schema = WeatherInfoInput
+        name: str = "weather_info"
+        description: str = "Get weather information for a location"
+        args_schema: Type[BaseModel] = WeatherInfoInput
         
         def _run(self, location: str, date: Optional[str] = None) -> Dict[str, Any]:
             return travel_utils.get_weather_info(location, date)
@@ -67,8 +67,8 @@ def create_langchain_tools(travel_utils: TravelUtils, itinerary_planner: Itinera
             return await travel_utils.get_weather_info_async(location, date)
 
     class ItineraryPlannerLangChainTool(BaseTool):
-        name = "create_itinerary"
-        description = "Create a detailed travel itinerary"
+        name: str = "create_itinerary"
+        description: str = "Create a detailed travel itinerary"
         
         def _run(self, **kwargs) -> Dict[str, Any]:
             return itinerary_planner.create_itinerary(**kwargs)
@@ -88,4 +88,4 @@ def register_tools(mcp_server, travel_utils: TravelUtils, itinerary_planner: Iti
     tools = create_langchain_tools(travel_utils, itinerary_planner)
     for tool in tools:
         mcp_server.register_tool(tool.name, tool)
-    return tools 
+    return tools
