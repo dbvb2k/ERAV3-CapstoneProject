@@ -1,0 +1,13 @@
+{
+  "training_completed": true,
+  "training_time_minutes": 416.36291947364805,
+  "total_training_steps": 9261,
+  "final_loss": 1.1320696084059902,
+  "best_eval_loss": 1.2778830528259277,
+  "model_path": "./outputs",
+  "inference_tests_count": 7,
+  "resumed_from_checkpoint": false,
+  "checkpoint_path": "N/A",
+  "completion_timestamp": 1750468387.4134178,
+  "completion_datetime": "2025-06-21 01:13:07"
+}
