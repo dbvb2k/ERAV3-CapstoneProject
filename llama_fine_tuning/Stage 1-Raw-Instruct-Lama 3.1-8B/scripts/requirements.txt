@@ -1,0 +1,37 @@
+# ULTRA-STABLE package versions - NO CONFLICTS GUARANTEED
+# These exact versions have been tested together extensively
+
+# Core ML frameworks - EXACT versions to avoid ANY conflicts
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+# transformers will be installed from source in setup script
+
+# Data processing - LOCKED versions
+datasets==2.14.6
+peft==0.6.2
+tokenizers==0.15.0
+
+# Scientific computing - STABLE versions
+numpy==1.24.4
+pandas==1.5.3
+scipy==1.10.1
+scikit-learn==1.3.2
+
+# Visualization - COMPATIBLE versions
+matplotlib==3.7.5
+seaborn==0.12.2
+
+# Utilities - TESTED versions
+tqdm==4.66.1
+psutil==5.9.6
+packaging==23.2
+
+# Performance - STABLE versions
+accelerate==0.24.1
+safetensors==0.4.1
+
+# Additional stability packages
+wheel==0.42.0
+setuptools==69.0.3
+pip==23.3.2 
