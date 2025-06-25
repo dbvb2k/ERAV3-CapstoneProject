@@ -1,0 +1,37 @@
+FROM ollama/ollama:latest
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Create a startup script with better error handling
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "Starting Ollama server..."\n\
+ollama serve &\n\
+OLLAMA_PID=$!\n\
+\n\
+echo "Waiting for Ollama to be ready..."\n\
+for i in {1..30}; do\n\
+  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
+    echo "Ollama is ready!"\n\
+    break\n\
+  fi\n\
+  echo "Waiting... ($i/30)"\n\
+  sleep 2\n\
+done\n\
+\n\
+echo "Pulling tinyllama model..."\n\
+ollama pull tinyllama\n\
+\n\
+echo "Model pulled successfully. Listing models:"\n\
+ollama list\n\
+\n\
+echo "Ollama service is ready!"\n\
+wait $OLLAMA_PID' > /start.sh && chmod +x /start.sh
+
+# Expose the port
+EXPOSE 11434
+
+# Use the startup script
+CMD ["/start.sh"] 

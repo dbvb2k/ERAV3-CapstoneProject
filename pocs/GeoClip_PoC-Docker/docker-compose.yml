@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  geoclip-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - ENVIRONMENT=production
+    restart: unless-stopped
+    networks:
+      - geoclip-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - geoclip-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile.chatbot
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - ENVIRONMENT=production
+      - API_URL=http://geoclip-api:8000/predict
+      - OLLAMA_API_URL=http://ollama:11434/api/generate
+    depends_on:
+      geoclip-api:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - geoclip-network
+
+networks:
+  geoclip-network:
+    driver: bridge
+
+volumes:
+  ollama_data:

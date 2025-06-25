@@ -1,0 +1,9 @@
+First, Start the API Server (This will start the FastAPI server on http://localhost:8000)
+python api.py
+or
+uvicorn api:app --reload
+
+Then, in a separate terminal, start the Streamlit app: (app.py is version 1, chatbot_app.py is the latest version)
+streamlit run app.py
+or
+streamlit run chatbot_app.py
