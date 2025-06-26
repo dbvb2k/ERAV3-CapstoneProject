@@ -1,0 +1,231 @@
+{
+  "timestamp": "2025-06-23T17:58:49.046881",
+  "questions": [
+    {
+      "question": "Plan a 5-day budget trip to Goa for Indian travelers with costs",
+      "base_response": "user\nPlan a 5-day budget trip to Goa for Indian travelers with costsassistant\n\ud83c\udf0d **ULTIMATE GOA TRAVEL GUIDE FOR INDIAN TRAVELERS**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b919,783/person for 5 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b912,477\n- Accommodation: \u20b94,663/night\n- Food: \u20b92,602/day\n- Transport: \u20b91,941/day\n- Activities: \u20b95,593 total\n- Shopping: \u20b926,286\n- **Total 5 days**: \u20b990,000-205,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 12 hours\n- **Best Booking**: 70 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,988/night):",
+      "travel_response": "user\nPlan a 5-day budget trip to Goa for Indian travelers with costsassistant\n\ud83c\udf0d **ULTIMATE GOA TRAVEL GUIDE FOR INDIAN TRAVELERS**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b937,957/person for 5 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b912,444\n- Accommodation: \u20b94,941/night\n- Food: \u20b93,908/day\n- Transport: \u20b91,479/day\n- Activities: \u20b912,663 total\n- Shopping: \u20b939,697\n- **Total 5 days**: \u20b990,000-205,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 14 hours\n- **Best Booking**: 75 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,995/night):",
+      "base_score": 7.4,
+      "travel_score": 7.4,
+      "improvement": 0.0
+    },
+    {
+      "question": "Best time to visit Kerala backwaters and accommodation options",
+      "base_response": "user\nBest time to visit Kerala backwaters and accommodation optionsassistant\n\ud83c\udf0d **ULTIMATE KERALA BACKWATERS TRAVEL GUIDE**\n\n**\ud83c\udfaf BEST TIME TO VISIT:**\n**Year-round travel possible**\n**Best months:** Sep-Oct (weather perfect), Nov-Dec (winter), Jan-Feb (winter)\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,999/night):**\n- Hostels and budget hotels\n- Shared accommodations\n- Local guesthouses\n\n**Mid-range (\u20b97,006/night):**\n- 3-4 star hotels\n- Boutique properties\n- Business hotels\n\n**Luxury (\u20b927,993+/night):**\n- 5-star international chains\n- Luxury resorts\n- Premium locations\n\n**\ud83d\ude97 TRANSPORT OPTIONS:**\n**Local Transport:**\n- Taxis\n- Bus\n- Metro\n- Rental cars available\n\n**Inter-city:**\n- Trains\n- Domestic flights\n- Rental cars\n- Taxi services",
+      "travel_response": "user\nBest time to visit Kerala backwaters and accommodation optionsassistant\n\ud83c\udf0d **ULTIMATE KERALA BACKWATERS TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b916,924/person for 8 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b911,409\n- Accommodation: \u20b92,814/night\n- Food: \u20b93,096/day\n- Transport: \u20b91,723/day\n- Activities: \u20b912,368 total\n- Shopping: \u20b920,879\n- **Total 8 days**: \u20b9114,000-268,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 7 hours\n- **Best Booking**: 70 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,941/night):**\n- Host",
+      "base_score": 5.9,
+      "travel_score": 7.3,
+      "improvement": 23.728813559322024
+    },
+    {
+      "question": "Complete travel guide for Rajasthan with food and culture tips",
+      "base_response": "user\nComplete travel guide for Rajasthan with food and culture tipsassistant\n\ud83c\udf0d **ULTIMATE RAJASTHAN TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b920,000/person for 6 days):**\n- Flight: \u20b98,000-20,000\n- Visa: \u20b914,286\n- Accommodation: \u20b93,477/night\n- Food: \u20b92,477/day\n- Transport: \u20b91,804/day\n- Activities: \u20b97,281 total\n- Shopping: \u20b917,296\n- **Total 6 days**: \u20b924,000-84,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 6 hours\n- **Best Booking**: 58 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,698/night):**\n- Hostels and",
+      "travel_response": "user\nComplete travel guide for Rajasthan with food and culture tipsassistant\n\ud83c\udf0d **ULTIMATE RAJASTHAN TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b919,847/person for 8 days):**\n- Flight: \u20b940,000-70,000\n- Visa: \u20b97,926\n- Accommodation: \u20b94,882/night\n- Food: \u20b93,402/day\n- Transport: \u20b91,804/day\n- Activities: \u20b918,956 total\n- Shopping: \u20b921,799\n- **Total 8 days**: \u20b9112,000-238,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 3 hours\n- **Best Booking**: 70 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,882/night):**\n- Hostels and",
+      "base_score": 7.3,
+      "travel_score": 7.3,
+      "improvement": 0.0
+    },
+    {
+      "question": "How to book train tickets for Mumbai to Delhi journey",
+      "base_response": "user\nHow to book train tickets for Mumbai to Delhi journeyassistant\n\ud83d\ude9a COMPLETE TRAIN TRAVEL GUIDE FOR MUMBAI TO DELHI JOURNEY!\n\n**\ud83d\udcb0 BUDGET BREAKDOWN:**\n**Total cost:** \u20b926,956/person (average)\n**Food:** \u20b93,956/day\n**Accommodation:** \u20b94,286/night\n**Transport:** \u20b91,096/day\n**Activities:** \u20b97,908 total\n**Shopping:** \u20b921,035\n**Total trip cost:** \u20b961,301\n\n**\u2708\ufe0f GETTING THERE:**\n**Best airlines:** Air India, Emirates, Qatar Airways\n**Flight duration:** 12 hours\n**Best booking:** 71 days advance\n**Cheapest months:** Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget:** \u20b93,823/night\n**Mid-range:** \u20b910,576/night\n**Luxury:** \u20b920,941+/night\n**Booking tips:**\n- Book 79 days advance",
+      "travel_response": "user\nHow to book train tickets for Mumbai to Delhi journeyassistant\n\ud83d\ude9a COMPLETE TRAVEL GUIDE FOR MUMBAI TO DELHI TRAIN TRAVEL!\n\n**\ud83d\udcb0 BUDGET BREAKDOWN:**\n**Ticket price:** \u20b915,002/person (average)\n**Food:** \u20b94,941/person for 5 days\n**Accommodation:** \u20b96,908/night\n**Transport:** \u20b91,911/day\n**Activities:** \u20b916,995 total\n**Shopping:** \u20b918,391\n**Total trip cost:** \u20b943,908 for 5 days\n\n**\u2708\ufe0f GETTING THERE:**\n**Flight options:**\n- Best airlines: Air India, Emirates, Qatar Airways\n- Flight duration: 16 hours\n- Best booking sites: Expedia, Booking.com, Air India website\n\n**\ud83d\ude97 TRANSPORT OPTIONS:**\n**Taxis:** \u20b91,994/day average\n**Rentals:** \u20b95,923/day\n**Public transport:** \u20b91,923/day\n**Apps:**",
+      "base_score": 7.4,
+      "travel_score": 7.5,
+      "improvement": 1.3513513513513467
+    },
+    {
+      "question": "Budget breakdown for a week in Himachal Pradesh",
+      "base_response": "user\nBudget breakdown for a week in Himachal Pradeshassistant\n\ud83c\udf0d **ULTIMATE HIMACHAL PRADESH TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN FOR 7 DAYS:**\n**Budget Trip (\u20b938,964/person):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b98,090\n- Accommodation: \u20b92,928/night\n- Food: \u20b92,697/day\n- Transport: \u20b91,059/day\n- Activities: \u20b99,823 total\n- Shopping: \u20b935,053\n- **Total 7 Days**: \u20b9106,000-247,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 5 hours\n- **Best Booking**: 62 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,926/night):**\n- Host",
+      "travel_response": "user\nBudget breakdown for a week in Himachal Pradeshassistant\n\ud83c\udf0d **ULTIMATE HIMACHAL PRADESH TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN FOR A WEEK:**\n**Budget Trip (\u20b916,987/person):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b99,908\n- Accommodation: \u20b94,964/night\n- Food: \u20b93,050/day\n- Transport: \u20b91,926/day\n- Activities: \u20b910,966 total\n- Shopping: \u20b921,528\n- **Total 7 days**: \u20b9106,000-247,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 2 hours\n- **Best Booking**: 69 days advance\n- **Cheapest Months**: Sep-Oct\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,723/night):**\n- Hostels",
+      "base_score": 7.2,
+      "travel_score": 7.2,
+      "improvement": 0.0
+    },
+    {
+      "question": "Traditional food guide for Tamil Nadu travel",
+      "base_response": "user\nTraditional food guide for Tamil Nadu travelassistant\n\ud83c\udf0d **ULTIMATE TAMIL NADU TRAVEL GUIDE FOR FOOD LOVERS**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b926,823/person for 5 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b97,966\n- Accommodation: \u20b93,402/night\n- Food: \u20b92,926/day\n- Transport: \u20b91,602/day\n- Activities: \u20b912,479 total\n- Shopping: \u20b921,281\n- **Total 5 days**: \u20b990,000-205,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 10 hours\n- **Best Booking**: 76 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,926/night):**\n",
+      "travel_response": "user\nTraditional food guide for Tamil Nadu travelassistant\n\ud83c\udf0d **ULTIMATE TAMIL NADU TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b927,933/person for 8 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b97,966\n- Accommodation: \u20b93,663/night\n- Food: \u20b92,718/day\n- Transport: \u20b91,599/day\n- Activities: \u20b918,059 total\n- Shopping: \u20b935,994\n- **Total 8 days**: \u20b9114,000-268,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 14 hours\n- **Best Booking**: 84 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,823/night):**\n- Hostels and",
+      "base_score": 7.2,
+      "travel_score": 7.2,
+      "improvement": 0.0
+    },
+    {
+      "question": "Best beaches in Andaman and Nicobar Islands with costs",
+      "base_response": "user\nBest beaches in Andaman and Nicobar Islands with costsassistant\n\ud83c\udf0d **ULTIMATE ANDAMAN AND NICOBAR ISLANDS BEACH GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b915,996/person for 8 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b912,096\n- Accommodation: \u20b94,804/night\n- Food: \u20b93,006/day\n- Transport: \u20b91,479/day\n- Activities: \u20b913,479 total\n- Shopping: \u20b915,998\n- **Total 8 days**: \u20b9114,000-268,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 3 hours\n- **Best Booking**: 38 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,994/night):**\n",
+      "travel_response": "user\nBest beaches in Andaman and Nicobar Islands with costsassistant\n\ud83c\udf0d **ULTIMATE ANDAMAN AND NICOBAR ISLANDS TRAVEL GUIDE**\n\n**\ud83c\udfe0 ACCOMMODATION OPTIONS:**\n**Budget (\u20b918,914/night):**\n- Hostels and budget hotels (\u20b94,998/night)\n- Local guesthouses (\u20b95,009/night)\n- Backpacker hotels (\u20b97,498/night)\n\n**\ud83d\udcb0 COMPLETE TRAVEL BUDGET:**\n**Budget Trip (\u20b934,783/person for 9 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b910,296\n- Accommodation: \u20b99,995/night\n- Food: \u20b92,286/day\n- Transport: \u20b91,477/day\n- Activities: \u20b918,296 total\n- Shopping: \u20b937,882\n- **Total 9 days**: \u20b9122,000-289,000\n\n**\ud83d\ude97 TRAN",
+      "base_score": 7.0,
+      "travel_score": 5.9,
+      "improvement": -15.714285714285708
+    },
+    {
+      "question": "Complete Uttarakhand adventure travel itinerary",
+      "base_response": "user\nComplete Uttarakhand adventure travel itineraryassistant\n\ud83c\udf0d **ULTIMATE UTTARAKHAND ADVENTURE TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b915,969/person for 10 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b93,964\n- Accommodation: \u20b94,995/night\n- Food: \u20b92,964/day\n- Transport: \u20b91,967/day\n- Activities: \u20b97,296 total\n- Shopping: \u20b942,090\n- **Total 10 days**: \u20b9130,000-310,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 4 hours\n- **Best Booking**: 69 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,967/night):**\n-",
+      "travel_response": "user\nComplete Uttarakhand adventure travel itineraryassistant\n\ud83c\udf0d **ULTIMATE UTTARAKHAND ADVENTURE TRAVEL ITINERARY**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b925,957/person for 10 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b910,444\n- Accommodation: \u20b93,734/night\n- Food: \u20b93,914/day\n- Transport: \u20b91,032/day\n- Activities: \u20b918,477 total\n- Shopping: \u20b945,576\n- **Total 10 days**: \u20b9130,000-310,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 10 hours\n- **Best Booking**: 87 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,966/night",
+      "base_score": 7.3,
+      "travel_score": 7.3,
+      "improvement": 0.0
+    },
+    {
+      "question": "Cultural festivals to experience in Gujarat",
+      "base_response": "user\nCultural festivals to experience in Gujaratassistant\nCultural experiences in Gujarat! Here's a comprehensive guide to help you make the most of your cultural adventure:\n\n**Major Festivals:**\n1. **Gujarat Festival**: A grand festival celebrating the state's cultural heritage, with music, dance, food, and cultural performances.\n2. **Navratri**: A 9-day festival celebrating Goddess Durga, with traditional dances, music, and food festivals.\n3. **Ganesh Chaturthi**: A Hindu festival celebrating Lord Ganesha's birthday, with processions, food, and cultural events.\n4. **Dussehra**: A festival marking the victory of good over evil, with cultural performances, food, and fireworks.\n5. **Diwali**: A major Hindu festival of lights, celebrated with fireworks, decorations, and family gatherings.\n\n**Traditional Events:**\n1. **Cultural Performances**: Traditional dance and music shows featuring local artists.\n2. **Cultural Workshops**: Hands-on experiences",
+      "travel_response": "user\nCultural festivals to experience in Gujaratassistant\nCultural experiences in Gujarat! Here's a comprehensive guide to help you make the most of your cultural adventure:\n\n**Major Festivals:**\n1. **Gujarat Festival**: A state-level festival celebrating art, culture, and tourism.\n2. **Navratri Festival**: A 9-day festival celebrating goddess Durga, with cultural performances and traditional food.\n3. **Ganesh Chaturthi**: A Hindu festival celebrating Lord Ganesha's birthday, with cultural events and traditional food.\n4. **Dussehra Festival**: A Hindu festival marking the victory of good over evil, with cultural performances and traditional food.\n5. **Christmas Festival**: A Christmas celebration with traditional food, decorations, and cultural events.\n\n**Traditional Events:**\n1. **Traditional Dance Performances**: Experience traditional dance forms like Bharatanatyam, Kathak, and folk dances.\n2. **Cultural Workshops**: Learn traditional crafts, music, and dance from local experts.\n3.",
+      "base_score": 5.3,
+      "travel_score": 5.4,
+      "improvement": 1.8867924528301987
+    },
+    {
+      "question": "Budget accommodation options in Bangalore for business travelers",
+      "base_response": "user\nBudget accommodation options in Bangalore for business travelersassistant\n\ud83c\udf0d **ULTIMATE BANGALORE TRAVEL GUIDE FOR BUSINESS TRAVELERS**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b920,994/person for 6 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b911,987\n- Accommodation: \u20b94,286/night\n- Food: \u20b92,286/day\n- Transport: \u20b91,995/day\n- Activities: \u20b910,965 total\n- Shopping: \u20b913,099\n- **Total 6 days**: \u20b998,000-226,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 15 hours\n- **Best Booking**: 85 days advance\n- **Cheapest Months**: Sep-Oct\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,908/night):",
+      "travel_response": "user\nBudget accommodation options in Bangalore for business travelersassistant\n\ud83c\udf0d **ULTIMATE BANGALORE BUSINESS TRAVEL GUIDE FOR BUSINESS TRAVELERS**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b918,951/person for 8 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b99,930\n- Accommodation: \u20b93,994/night\n- Food: \u20b93,926/day\n- Transport: \u20b91,723/day\n- Activities: \u20b911,926 total\n- Shopping: \u20b935,926\n- **Total 8 days**: \u20b9114,000-268,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 5 hours\n- **Best Booking**: 41 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,734/night",
+      "base_score": 7.2,
+      "travel_score": 7.2,
+      "improvement": 0.0
+    },
+    {
+      "question": "Best hill stations near Mumbai for weekend trips",
+      "base_response": "user\nBest hill stations near Mumbai for weekend tripsassistant\nA weekend getaway from Mumbai! Here are some of the best hill stations near Mumbai for a quick and fun trip:\n\n**1. Matheran, Maharashtra (260 km, 5 hours)**\n\t* Best time: Year-round\n\t* Activities: Hiking, wildlife safari, temple visits\n\t* Budget tip: Budget-friendly accommodations available from \u20b92,000/night\n\n**2. Mahabaleshwar, Maharashtra (250 km, 5 hours)**\n\t* Best time: Year-round\n\t* Activities: Wildlife safari, temple visits, shopping\n\t* Budget tip: Budget-friendly accommodations available from \u20b95,000/night\n\n**3. Mysore, Karnataka (2,477 km, 5 hours)**\n\t* Best time: Year-round\n\t* Activities: Wildlife safari, temple visits, shopping\n\t* Budget tip: Budget-friendly accommodations available from \u20b94,000/night\n\n**4. Dalhousie, Himach",
+      "travel_response": "user\nBest hill stations near Mumbai for weekend tripsassistant\nAdventure awaits! Here's a comprehensive guide to the best hill stations near Mumbai for weekend trips:\n\n**Top Recommendations:**\n1. **Matheran, Maharashtra**: 168 km, 3 hours. Wildlife, temples, and adventure activities.\n2. **Pune, Maharashtra**: 188 km, 4 hours. Shopping, temples, and cultural experiences.\n3. **Mumbai, Maharashtra** (yes, you read that right!): 12 km, 30 minutes. Beaches, temples, and shopping.\n4. **Mumbai, Maharashtra** (again, because it's a great weekend getaway!): 12 km, 30 minutes. Shopping, beaches, and local markets.\n5. **Mahabaleshwar, Maharashtra**: 232 km, 5 hours. Temple visits, shopping, and adventure activities.\n6. **Nashik, Maharashtra**: 224 km, 4 hours. Temple visits, shopping, and local experiences.\n7. **P",
+      "base_score": 5.9,
+      "travel_score": 5.5,
+      "improvement": -6.7796610169491585
+    },
+    {
+      "question": "Traditional handicrafts shopping guide for Jaipur",
+      "base_response": "user\nTraditional handicrafts shopping guide for Jaipurassistant\n\ud83c\udf0d **ULTIMATE TRADITIONAL HANDICRAFTS SHOPPING GUIDE FOR JAIPUR**\n\n**\ud83d\udcb0 BUDGET ALERT:**\n**Budget-friendly options:** \u20b917,400/person for basic purchases\n**Mid-range:** \u20b923,700/person for moderate shopping\n**Premium:** \u20b942,600/person for high-end shopping\n\n**\ud83d\udecd\ufe0f BEST SHOPPING PLACES:**\n1. **Traditional markets:** Local markets like Bada Bazaar, Chawla Market, and Local Markets offer traditional handicrafts at budget-friendly prices.\n2. **Specialty stores:** Stores specializing in traditional crafts, like Museum Shopping, Cultural Centers, and Shopping Malls.\n3. **Local markets:** Local markets like Local Markets, Night Markets, and Bazaars are great for traditional shopping.\n\n**\ud83c\udf81 TOP SHOPPING PICKS:**\n1. **Handicrafts:** Traditional crafts like woodcarvings, pottery, and textiles.\n2. **Local",
+      "travel_response": "user\nTraditional handicrafts shopping guide for Jaipurassistant\n\ud83c\udf0d **ULTIMATE TRADITIONAL HANDICRAFTS SHOPPING GUIDE FOR JAIPUR**\n\n**\ud83d\udcb0 BUDGET ALERT:**\n**Budget-friendly options:** \u20b915,000/person for basic shopping\n**Mid-range:** \u20b920,000-40,000/person\n**Premium:** \u20b950,000-100,000/person\n\n**\ud83d\udecd\ufe0f BEST SHOPPING DESTINATIONS:**\n1. **Local Markets:** Shopping markets like Shopping Market, Shopping Market, and Shopping Market offer a wide range of local products.\n2. **Shopping Malls:** Major shopping malls like Shopping Mall, Shopping Mall, and Shopping Mall feature international brands and local specialties.\n3. **Traditional Markets:** Traditional markets like Local Market, Traditional Market, and Shopping Market are perfect for cultural experiences and local shopping.\n4. **Specialty Stores:** Shopping centers like Shopping Center, Shopping Center, and Shopping Center specialize in specific products like Fashion, Electronics, and Food.\n\n**\ud83d\uded2 MUST",
+      "base_score": 5.3,
+      "travel_score": 5.4,
+      "improvement": 1.8867924528301987
+    },
+    {
+      "question": "Monsoon travel destinations in India with safety tips",
+      "base_response": "user\nMonsoon travel destinations in India with safety tipsassistant\n\ud83c\udf0d **ULTIMATE MONSOON TRAVEL GUIDE FOR INDIA**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b924,441/person for 6 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b93,734\n- Accommodation: \u20b92,286/night\n- Food: \u20b93,955/day\n- Transport: \u20b91,879/day\n- Activities: \u20b98,477 total\n- Shopping: \u20b922,296\n- **Total 6 days**: \u20b998,000-226,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 5 hours\n- **Best Booking**: 37 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,823/night):**\n- Hostels",
+      "travel_response": "user\nMonsoon travel destinations in India with safety tipsassistant\n\ud83c\udf0d **ULTIMATE MONSOON TRAVEL GUIDE FOR INDIA**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b929,994/person for 6 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b95,864\n- Accommodation: \u20b94,718/night\n- Food: \u20b93,956/day\n- Transport: \u20b91,695/day\n- Activities: \u20b911,219 total\n- Shopping: \u20b947,951\n- **Total 6 days**: \u20b998,000-226,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 15 hours\n- **Best Booking**: 60 days advance\n- **Cheapest Months**: Mar-Apr\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b93,994/night):**\n- Hostels",
+      "base_score": 7.1,
+      "travel_score": 7.1,
+      "improvement": 0.0
+    },
+    {
+      "question": "Complete guide to Leh Ladakh bike trip with costs",
+      "base_response": "user\nComplete guide to Leh Ladakh bike trip with costsassistant\n\ud83c\udf0d **ULTIMATE LEH LADAKH BIKE TRIP GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b924,000/person for 5 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b912,050\n- Accommodation: \u20b93,006/night\n- Food: \u20b93,966/day\n- Transport: \u20b91,930/day\n- Activities: \u20b98,286 total\n- Shopping: \u20b939,286\n- **Total 5 days**: \u20b990,000-205,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 3 hours\n- **Best Booking**: 75 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,966/night):**\n- Host",
+      "travel_response": "user\nComplete guide to Leh Ladakh bike trip with costsassistant\n\ud83c\udf0d **ULTIMATE LEH LADAKH BIKE TRIP GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b924,964/person for 10 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b913,930\n- Accommodation: \u20b93,914/night\n- Food: \u20b93,966/day\n- Transport: \u20b91,714/day\n- Activities: \u20b916,930 total\n- Equipment: \u20b917,966\n- **Total 10 days**: \u20b9130,000-310,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 8 hours\n- **Best Booking**: 67 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,090/night):**\n- Host",
+      "base_score": 6.9,
+      "travel_score": 6.9,
+      "improvement": 0.0
+    },
+    {
+      "question": "South Indian temple tour itinerary with accommodation",
+      "base_response": "user\nSouth Indian temple tour itinerary with accommodationassistant\n\ud83c\udf0d **ULTIMATE SOUTH INDIAN TEMPLE TOUR ITINERARY**\n\n**\ud83c\udfaf BEST TIME TO VISIT:**\n**Year-round**, but best from **September to November** and **March to May** when weather is pleasant.\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,999/night):**\n- Hostels and budget hotels\n- Shared accommodations\n- Local guesthouses\n\n**Mid-Range (\u20b95,499/night):**\n- 3-4 star hotels\n- Boutique properties\n- Business hotels\n\n**Luxury (\u20b918,900+/night):**\n- 5-star international chains\n- Luxury resorts\n- Premium locations\n\n**\ud83d\ude97 TRANSPORT OPTIONS:**\n**Local Transport:**\n- Taxis\n- Bus\n- Metro\n- Rental cars (\u20b91,902/day)\n\n**Inter-city:**\n- Trains\n- Domestic flights\n- Rental cars",
+      "travel_response": "user\nSouth Indian temple tour itinerary with accommodationassistant\n\ud83c\udf0d **ULTIMATE SOUTH INDIAN TEMPLE TOUR ITINERARY**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b926,734/person for 5 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b96,479\n- Accommodation: \u20b94,734/night\n- Food: \u20b93,804/day\n- Transport: \u20b91,941/day\n- Activities: \u20b912,219 total\n- Shopping: \u20b941,870\n- **Total 5 days**: \u20b990,000-205,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 3 hours\n- **Best Booking**: 71 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b92,964/night):**\n- Host",
+      "base_score": 6.2,
+      "travel_score": 7.3,
+      "improvement": 17.74193548387096
+    },
+    {
+      "question": "Wildlife safari options in India with booking details",
+      "base_response": "user\nWildlife safari options in India with booking detailsassistant\nWildlife safari adventures in India! Here's a comprehensive guide to help you plan your wildlife safari experience:\n\n**Best Destinations:**\n1. Madhya Pradesh: Known for its rich wildlife heritage, MP has several national parks and wildlife sanctuaries.\n2. Uttarakhand: Home to the majestic Himalayas, Uttarakhand offers stunning mountain landscapes and wildlife experiences.\n3. Rajasthan: A popular tourist destination, Rajasthan has several wildlife sanctuaries and national parks.\n4. Karnataka: With its lush forests and wildlife reserves, Karnataka is a great choice for wildlife enthusiasts.\n5. Maharashtra: The state has several wildlife sanctuaries and national parks, including the famous Tadoba-Andhari Tiger Reserve.\n6. West Bengal: Known for its tea plantations and wildlife sanctuaries, WB is a great destination for wildlife enthusiasts.\n7. Odisha: With its rich cultural heritage and wildlife reserves, Odisha is a unique travel experience.\n8. Jharkhand: Home",
+      "travel_response": "user\nWildlife safari options in India with booking detailsassistant\nWildlife safari adventures in India! Here's a comprehensive guide to help you plan your perfect wildlife safari experience:\n\n**Best Wildlife Safari Destinations in India:**\n1. **Kanha National Park, Madhya Pradesh**: Known for its tiger sightings and scenic landscapes.\n2. **Corbett National Park, Uttarakhand**: One of India's most famous national parks, with a rich wildlife heritage.\n3. **Ranthambore National Park, Rajasthan**: Famous for tiger sightings and royal heritage.\n4. **Periyar Wildlife Sanctuary, Kerala**: For wildlife enthusiasts, with opportunities to spot elephants, wild boar, and birds.\n5. **Kaziranga National Park, Assam**: A UNESCO World Heritage Site, known for its rhino sightings.\n6. **Bandhavgarh National Park, Madhya Pradesh**: Another popular tiger safari destination.\n7. **Nagarhole Wildlife Sanctuary, Karnataka**: For wildlife enthusiasts, with a focus on birdwatching and wildlife",
+      "base_score": 7.2,
+      "travel_score": 7.2,
+      "improvement": 0.0
+    },
+    {
+      "question": "Food street guide for Delhi with must-try dishes",
+      "base_response": "user\nFood street guide for Delhi with must-try dishesassistant\nA culinary adventure in Delhi! Here's a comprehensive food street guide to help you explore the city's food scene:\n\n**BEST FOOD DESTINATIONS:**\n**1. Local Markets:**\n- Food markets like Chawkiz Market, Sarojini Market, and Janpath Market offer local food at affordable prices.\n- Traditional markets like Old Delhi's streets, Sarai Kalekanar Market, and Dilli Haat Market have a mix of local food and traditional restaurants.\n\n**2. Food Streets:**\n- Connaught Place's food street has international restaurants and local eateries.\n- Hauz Khas Market has a food hub with cafes and restaurants.\n- Food streets in local markets like Sarojini Market and Janpath Market offer local food at budget-friendly prices.\n\n**3. Food Courts:**\n- Shopping malls like Select Citywalk, DLF Mall of India, and Mall of India have food courts with international options.\n- Traditional food courts like Old Delhi's food markets and",
+      "travel_response": "user\nFood street guide for Delhi with must-try dishesassistant\nFoodie paradise alert! Here's a comprehensive food street guide for Delhi, including must-try dishes and restaurants:\n\n**Best Food Areas:**\n1. **Connaught Place**: Shopping and food haven with international restaurants and local eateries.\n2. **Khan Market**: Cultural hub with Indian and international restaurants, cafes, and traditional eateries.\n3. **Gourmet Districts**: High-end restaurants and boutique hotels in areas like Vasant Kunj, Aerocity, and Gurgaon.\n4. **Local Markets**: Traditional markets like Chawassistant\nFoodie paradise alert! Here's a comprehensive food street guide for Delhi, including must-try dishes and restaurants:\n\n**Best Food Areas:**\n1. **Connaught Place**: Shopping and food haven with international restaurants and local eateries.\n2. **Khan Market**: Cultural hub with Indian and international restaurants, cafes, and traditional eateries.\n3. **Gourmet Districts**: High-end restaurants and",
+      "base_score": 5.9,
+      "travel_score": 5.9,
+      "improvement": 0.0
+    },
+    {
+      "question": "Best time and places for photography in Kashmir",
+      "base_response": "user\nBest time and places for photography in Kashmirassistant\n\ud83d\udcf8 **ULTIMATE PHOTOGRAPHY GUIDE FOR KASHMIR**\n\n**\ud83c\udf0d BEST TIME TO VISIT:**\n**Year-round photography is possible in Kashmir, but the best time is:**\n- **Summer (Jun-Sep):** Best weather, festivals, and events.\n- **Winter (Dec-Feb):** Snow-covered landscapes, festivals, and wildlife photography.\n- **Spring (Mar-May) and Autumn (Sep-Oct):** Mild weather, festivals, and seasonal activities.\n\n**\ud83d\udccd BEST PHOTO SPOTS:**\n**1. Natural Wonders:**\n- Natural lakes and water bodies\n- Mountains and peaks\n- Waterfalls and rivers\n- Beaches and coastal areas\n- Wildlife reserves and national parks\n\n**2. Cultural Heritage:**\n- Historical sites and museums\n- Cultural centers and festivals\n- Traditional villages and local markets\n- Cultural performances and events\n- Cultural festivals and celebrations\n\n**3. Adventure Photography:**\n- Adventure sports (e.g",
+      "travel_response": "user\nBest time and places for photography in Kashmirassistant\nPhotography in Kashmir! \ud83d\udcf8 Here's a comprehensive guide to help you capture the best moments:\n\n**Best Time:**\n\ud83d\udcc5 **Best months:** September to November and March to May for clear skies and comfortable weather.\n\ud83d\udcc5 **Best season:** Summer (June to August) for wildlife photography and winter (December to February) for winter sports and festivals.\n\n**Best Places:**\n\ud83c\udf0d **Local Favorites:**\n- Local markets and bazaars\n- Traditional restaurants and eateries\n- Local museums and cultural sites\n- Cultural performances and festivals\n\n\ud83c\udf0d **Adventure Spots:**\n- Mountains and trekking routes\n- Adventure parks and activities (e.g., rafting, skiing)\n- Wildlife sanctuaries\n- Beaches and coastal areas\n\n\ud83c\udf0d **Cultural Sites:**\n- Cultural museums and cultural centers\n- Historical sites and monuments\n- Cultural festivals and events\n- Cultural performances\n\n**Photography Tips:**\n\ufffd",
+      "base_score": 6.3,
+      "travel_score": 5.3,
+      "improvement": -15.873015873015872
+    },
+    {
+      "question": "Complete guide to Andhra Pradesh travel with costs",
+      "base_response": "user\nComplete guide to Andhra Pradesh travel with costsassistant\n\ud83c\udf0d **ULTIMATE ANDHRA PRADESH TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b918,924/person for 9 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b912,966\n- Accommodation: \u20b93,969/night\n- Food: \u20b92,835/day\n- Transport: \u20b91,973/day\n- Activities: \u20b99,966 total\n- Shopping: \u20b931,941\n- **Total 9 days**: \u20b9122,000-289,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 4 hours\n- **Best Booking**: 39 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,990/night):**\n- Host",
+      "travel_response": "user\nComplete guide to Andhra Pradesh travel with costsassistant\n\ud83c\udf0d **ULTIMATE ANDHRA PRADESH TRAVEL GUIDE**\n\n**\ud83d\udcb0 COMPLETE COST BREAKDOWN:**\n**Budget Trip (\u20b915,000/person for 8 days):**\n- Flight: \u20b950,000-100,000\n- Visa: \u20b94,576\n- Accommodation: \u20b94,926/night\n- Food: \u20b93,914/day\n- Transport: \u20b91,956/day\n- Activities: \u20b98,402 total\n- Shopping: \u20b910,286\n- **Total 8 days**: \u20b9114,000-268,000\n\n**\u2708\ufe0f GETTING THERE:**\n- **Best Airlines**: Air India, Emirates, Qatar Airways\n- **Flight Duration**: 7 hours\n- **Best Booking**: 78 days advance\n- **Cheapest Months**: Jan-Feb\n\n**\ud83c\udfe8 ACCOMMODATION OPTIONS:**\n**Budget (\u20b94,924/night):**\n- Host",
+      "base_score": 7.0,
+      "travel_score": 7.0,
+      "improvement": 0.0
+    },
+    {
+      "question": "Traditional ayurveda wellness destinations in Kerala",
+      "base_response": "user\nTraditional ayurveda wellness destinations in Keralaassistant\nCultural experiences and adventure travel recommendations for Kerala! \ud83c\udf0d Here's a comprehensive guide to traditional Ayurveda wellness destinations in Kerala:\n\n**Best Places:**\n1. **Kerala**: Known for its Ayurvedic traditions, Kerala offers a wide range of wellness centers and resorts.\n2. **Mumbai**: Major wellness hubs like Juhu Beach and Bandra are popular for Ayurveda centers.\n3. **Goa**: Beach towns like Palolem and Ashwem have Ayurvedic resorts and wellness centers.\n4. **Rajasthan**: Major cities like Jaipur, Udaipur, and Jodhpur have traditional Ayurveda centers.\n5. **Tamil Nadu**: Major cities like Chennai, Madurai, and Coimbatore have traditional Ayurveda centers.\n\n**Top Ayurveda Centers:**\n1. **Ayurveda Health Resorts**: Kerala-based resorts like Ayurveda Health Resorts, Kal\u043f\u0456\u0434ya Ayurveda Health Resorts, and",
+      "travel_response": "user\nTraditional ayurveda wellness destinations in Keralaassistant\nA perfect choice! Here's a comprehensive guide to Traditional Ayurveda Wellness destinations in Kerala:\n\n**Best Destinations:**\n1. **Ayurveda Resorts:**\n\t* Ayurveda Resort, Thrissur: Offers traditional Ayurveda treatments and wellness programs.\n\t* Ayurveda Resort, Thrivandrum: Features modern Ayurveda facilities and wellness packages.\n\t* Ayurveda Resort, Ernakulam: Provides traditional Ayurveda treatments and spa facilities.\n2. **Wellness Centers:**\n\t* Ayurveda Wellness Center, Kochi: Offers yoga, meditation, and wellness classes.\n\t* Wellness Center, Thrissur: Features yoga, meditation, and wellness workshops.\n\t* Wellness Center, Ernakulam: Offers yoga, meditation, and wellness classes.\n3. **Wellness Hotels:**\n1. **Hotel Ayurhealth, Kochi**: Offers Ayurveda treatments, yoga, and wellness facilities.\n2. **Hotel Wellness",
+      "base_score": 6.3,
+      "travel_score": 5.4,
+      "improvement": -14.285714285714276
+    }
+  ],
+  "base_scores": [
+    7.4,
+    5.9,
+    7.3,
+    7.4,
+    7.2,
+    7.2,
+    7.0,
+    7.3,
+    5.3,
+    7.2,
+    5.9,
+    5.3,
+    7.1,
+    6.9,
+    6.2,
+    7.2,
+    5.9,
+    6.3,
+    7.0,
+    6.3
+  ],
+  "travel_scores": [
+    7.4,
+    7.3,
+    7.3,
+    7.5,
+    7.2,
+    7.2,
+    5.9,
+    7.3,
+    5.4,
+    7.2,
+    5.5,
+    5.4,
+    7.1,
+    6.9,
+    7.3,
+    7.2,
+    5.9,
+    5.3,
+    7.0,
+    5.4
+  ],
+  "improvements": [
+    0.0,
+    23.728813559322024,
+    0.0,
+    1.3513513513513467,
+    0.0,
+    0.0,
+    -15.714285714285708,
+    0.0,
+    1.8867924528301987,
+    0.0,
+    -6.7796610169491585,
+    1.8867924528301987,
+    0.0,
+    0.0,
+    17.74193548387096,
+    0.0,
+    0.0,
+    -15.873015873015872,
+    0.0,
+    -14.285714285714276
+  ]
+}

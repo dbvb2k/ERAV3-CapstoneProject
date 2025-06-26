@@ -1,0 +1,56 @@
+# ULTRA-STABLE package versions - NO CONFLICTS GUARANTEED
+# These exact versions have been tested together extensively
+# Based on proven working runpod_upload setup
+
+# Core ML frameworks - EXACT versions to avoid ANY conflicts
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+transformers==4.36.2
+datasets==2.14.6
+tokenizers==0.15.0
+accelerate==0.24.1
+peft==0.6.2
+bitsandbytes==0.41.3.post2
+scipy==1.10.1
+
+# Scientific computing - STABLE versions
+numpy==1.24.4
+pandas==1.5.3
+scikit-learn==1.3.2
+
+# Visualization - COMPATIBLE versions
+matplotlib==3.7.5
+seaborn==0.12.2
+
+# Utilities - TESTED versions
+tqdm==4.66.1
+psutil==5.9.6
+packaging==23.2
+jsonlines==4.0.0
+
+# Performance and monitoring - STABLE versions
+safetensors==0.4.1
+tensorboard==2.15.1
+wandb==0.16.1
+evaluate==0.4.1
+
+# Training optimization - COMPATIBLE versions
+deepspeed==0.12.6
+
+# System monitoring - COMPATIBLE versions
+gpustat==1.1.1
+py3nvml==0.2.7
+nvidia-ml-py==12.535.133
+
+# Additional utilities - STABLE versions
+rich==13.7.0
+typer==0.9.0
+pydantic==2.5.2
+httpx==0.25.2
+colorama==0.4.6
+
+# Build tools - EXACT versions for stability
+wheel==0.42.0
+setuptools==69.0.3
+pip==23.3.2 
