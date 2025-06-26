@@ -2,22 +2,55 @@
 # Read the full specification for the "Environment" type at:
 #  https://aws.github.io/copilot-cli/docs/manifest/environment/
 
-# Your environment name will be used in naming your resources like VPC, cluster, etc.
+# Your environment name will be used in naming your resources like log groups, ECS services, etc.
 name: test1
 type: Environment
 
-# Import your own VPC and subnets or configure how they should be created.
-# network:
-#   vpc:
-#     id:
+# Configuration for your environment.
+region: us-east-1
+account: default
+
+# Enable Service Connect for inter-service communication
+service_connect: true
+
+# Network configuration
+network:
+  vpc:
+    cidr: 10.0.0.0/16
+    subnets:
+      public:
+        - cidr: 10.0.0.0/24
+          az: us-east-1a
+        - cidr: 10.0.1.0/24
+          az: us-east-1b
+      private:
+        - cidr: 10.0.2.0/24
+          az: us-east-1a
+        - cidr: 10.0.3.0/24
+          az: us-east-1b
+
+# ECS cluster configuration for GPU support
+cluster:
+  # Enable GPU instance support
+  gpu_instances: true
+  
+  # Instance types that support GPU
+  instance_types:
+    - g4dn.xlarge
+    - g4dn.2xlarge
+    - g5.xlarge
+    - g5.2xlarge
+  
+  # Capacity provider strategy
+  capacity_providers:
+    - FARGATE
+    - FARGATE_SPOT
+    - CUSTOM
 
 # Configure the load balancers in your environment, once created.
 # http:
 #   public:
 #   private:
-
-# Configure service connect for inter-service communication
-service_connect: true
 
 # Configure observability for your environment resources.
 observability:

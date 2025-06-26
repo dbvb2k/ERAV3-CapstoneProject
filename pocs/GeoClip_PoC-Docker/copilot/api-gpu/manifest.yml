@@ -1,0 +1,52 @@
+# The manifest for the "api-gpu" service.
+# Read the full specification for the "Backend Service" type at:
+#  https://aws.github.io/copilot-cli/docs/manifest/backend-service/
+
+# Your service name will be used in naming your resources like log groups, ECS services, etc.
+name: api-gpu
+type: Backend Service
+
+# Your service is reachable at "http://api-gpu.${COPILOT_SERVICE_DISCOVERY_ENDPOINT}:8000" but is not public.
+
+# Configuration for your containers and service.
+image:
+  build: Dockerfile-GPU.api
+  # Port exposed through your container to route traffic to it.
+  port: 8000
+
+# GPU-optimized resource allocation
+cpu: 4096       # Number of CPU units for the task (4 vCPU).
+memory: 16384   # Amount of memory in MiB used by the task (16GB).
+count: 1       # Number of tasks that should be running in your service.
+exec: true     # Enable running commands in your container.
+
+# GPU configuration (requires EC2 launch type)
+launch_type: EC2
+
+# GPU resource allocation
+gpu:
+  count: 1
+  type: "g4dn.xlarge"  # Specify GPU instance type
+
+network:
+  connect: true # Enable Service Connect for intra-environment traffic between services.
+
+# Environment variables
+variables:
+  ENVIRONMENT: production
+  CUDA_VISIBLE_DEVICES: "0"
+  PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
+
+# Health check
+healthcheck:
+  command: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 120s
+
+# Environment-specific overrides
+environments:
+  test1:
+    variables:
+      API_URL: http://api-gpu.test1.geoclip.local:8000/predict 

@@ -1,0 +1,293 @@
+First, Start the API Server (This will start the FastAPI server on http://localhost:8000)
+python api.py
+or
+uvicorn api:app --reload
+
+Then, in a separate terminal, start the Streamlit app: (app.py is version 1, chatbot_app.py is the latest version)
+streamlit run app.py
+or
+streamlit run chatbot_app.py
+
+
+================================================================================================================================================
+
+docker-compose down
+docker-compose down -v
+docker system prune -f
+docker-compose up --build
+
+================================================================================================================================================
+
+================================================================================================================================================
+
+# Start Ollama container
+docker-compose up -d ollama
+
+# Wait for Ollama to start (about 30 seconds)
+sleep 30
+
+# Pull the required model
+docker exec -it geoclip_poc-4-ollama-1 ollama pull llama3.1:8b-instruct-q4_K_M
+
+# Start the API and chatbot services
+docker-compose up -d geoclip-api chatbot
+
+# To view the logs of different services
+docker-compose logs -f
+
+-------------------------------- 
+# For chatbot logs
+docker-compose logs -f chatbot
+
+# For API logs
+docker-compose logs -f geoclip-api
+
+# For Ollama logs
+docker-compose logs -f ollama
+
+--------------------------
+
+# To check if all services are running:
+docker ps
+
+# Restart a specific service
+docker-compose restart chatbot
+
+# Restart all services
+docker-compose restart
+
+================================================================================================================================================
+
+# Start all services
+docker-compose up -d
+
+# Start specific service (e.g., just the API)
+docker-compose up -d geoclip-api
+
+# To stop all services
+docker-compose down
+
+# Stop specific service
+docker-compose stop geoclip-api
+
+-------------------------------------------------------
+
+# Remove all containers, networks, and volumes
+docker-compose down -v
+
+# Remove all containers and networks but keep volumes
+docker-compose down
+
+# Remove all unused containers, networks, images, and volumes
+docker system prune -a --volumes
+
+------------------------------------------------------- 
+++++++++++++++++++++++++++++++++++++++++++++
+
+# Rebuild and restart all services
+docker-compose up -d --build
+
+# Rebuild and restart only the chatbot service
+docker-compose up -d --build chatbot
+
+# Clean rebuild 
+# Stop all services
+docker-compose down
+
+# Remove all containers and rebuild
+docker-compose up -d --build
+
+# To force a clean rebuild without using cache:
+docker-compose build --no-cache chatbot
+docker-compose up -d chatbot
+
+
+================================================================================================================================================
+# First, start Ollama
+docker-compose up -d ollama
+
+# Wait for Ollama to be ready (about 1-2 minutes)
+# Check Ollama status
+docker-compose logs -f ollama
+
+# Once Ollama is running, pull the model
+docker exec -it geoclip_poc-4-ollama-1 ollama pull llama3.1:8b-instruct-q4_K_M
+
+# Then start the API
+docker-compose up -d geoclip-api
+
+# Check API status
+docker-compose logs -f geoclip-api
+
+# Finally, start the chatbot
+docker-compose up -d chatbot
+
+# Check chatbot status
+docker-compose logs -f chatbot
+
+================================================================================================================================================
+
+Steps to run the application on Docker :
+
+Now, I'll provide you with step-by-step instructions to run this application using Docker Desktop:
+
+### Step-by-Step Instructions to Run the Application
+
+1. **Prerequisites**:
+   - Make sure Docker Desktop is installed and running on your system
+   - Ensure all project files are in the same directory
+
+2. **Build and Start the Containers**:
+   Open a terminal in your project directory and run:
+   ```bash
+   docker-compose up --build
+   ```
+   This command will:
+   - Build both Docker images
+   - Create and start both containers
+   - Set up the network between them
+   - Mount the logs directory
+
+3. **Access the Applications**:
+   - Geoclip API will be available at: `http://localhost:8000`
+   - Chatbot application will be available at: `http://localhost:8501`
+
+4. **View Logs**:
+   - You can view the logs in real-time in the terminal where you ran docker-compose
+   - Logs are also persisted in the `./logs` directory on your host machine
+
+5. **Stop the Application**:
+   - Press `Ctrl+C` in the terminal where docker-compose is running
+   - Or run `docker-compose down` in a new terminal
+
+6. **Additional Commands**:
+   - To stop and remove containers: `docker-compose down`
+   - To view running containers: `docker ps`
+   - To view logs of a specific service: `docker-compose logs -f [service-name]`
+     (e.g., `docker-compose logs -f geoclip-api` or `docker-compose logs -f chatbot`)
+
+### Important Notes:
+1. The Geoclip API runs on port 8000 and the Chatbot on port 8501
+2. The logs directory is mounted as a volume, so logs will persist even if containers are removed
+3. The chatbot service depends on the API service, so it will wait for the API to be ready before starting
+4. Both services are configured to restart automatically unless explicitly stopped
+
+Would you like me to explain any part of the setup in more detail or help you with any specific aspect of running the application?
+
+===============================================================================================================================================
+
+# 1. Install Copilot (One time activity)
+winget install AWS.Copilot
+
+--------------------------------
+
+# 2. Initialize your app
+copilot init --app geoclip --name chatbot --type "Load Balanced Web Service" --dockerfile "./Dockerfile.chatbot" --port 8501
+
+# 3. Add other services
+copilot svc init --name api --svc-type "Backend Service" --dockerfile "./Dockerfile.api" --port 8000
+copilot svc init --name ollama --svc-type "Backend Service" --dockerfile "./Dockerfile.ollama" --port 11434
+
+# 3a. Create a test environment (If you answer 'y' in step 2, then this is not required ?)
+copilot env init --name test1 --profile default --app geoclip
+
+# 4. Deploy all services to the test1 environment (If you answer 'y' in step 2, then this is not required ?)
+copilot env deploy --name test1 (Not working ... Deploy individually)
+or 
+
+copilot svc deploy --name ollama --env test1
+copilot svc deploy --name api --env test1
+copilot svc deploy --name chatbot --env test1
+(After this step it will display the test URL like this)
+
+old
+http://geocli-Publi-syiQ9INbbLmc-1162515787.ap-south-1.elb.amazonaws.com
+
+http://geocli-Publi-FMG9MRyfpnjF-925315376.ap-south-1.elb.amazonaws.com
+ 
+# 5. Get the URL for your chatbot service
+copilot svc show --name chatbot --env test1
+
+# 6. Finally clean up everything
+copilot app delete
+
+# Check the manifest file in docker image
+copilot env show --name test1 --manifest
+
+Get the test URL
+ http://geocli-Publi-JfWAtFDDfHRh-890690893.ap-south-1.elb.amazonaws.com
+
+========================================================================================================================================================================
+
+Step 5: After Deployment, Pull the Model
+
+# Pull the tinyllama model
+copilot svc exec --name ollama --env test --command "ollama pull tinyllama"
+
+# Test the API connection
+copilot svc exec --name chatbot --env test --command "python -c \"import requests; r = requests.get('http://api:8000/health'); print('API Status:', r.status_code)\""
+
+# Test the Ollama connection
+copilot svc exec --name chatbot --env test --command "python -c \"import requests; r = requests.get('http://ollama:11434/api/tags'); print('Ollama Status:', r.status_code)\""
+
+
+========================================================================================================================================================================
+If Req 
+
+copilot svc deploy --name ollama --env test
+copilot svc deploy --name api --env test
+copilot svc deploy --name chatbot --env test
+
+# copilot svc init --name ollama --svc-type "Backend Service" --image "ollama/ollama:latest" --port 11434
+
+copilot svc deploy --name ollama --env test
+copilot svc logs --name ollama --env test
+
+
+chatbot manifest file
+variables:
+  ENVIRONMENT: production
+  API_URL: http://api:8000/predict
+  OLLAMA_API_URL: http://ollama:11434/api/generate
+  MODEL_NAME: llama3.1:8b-instruct-q4_K_M
+  
+  
+  API_URL: http://api.test.geoclip.local:8000/predict
+  OLLAMA_API_URL: http://ollama.test.geoclip.local:11434/api/generate
+
+========================================================================================================================================================================
+
+Trouble shooting commands
+# Check service status
+copilot svc status --env test
+
+or 
+
+# Check the revision numbers of the services
+copilot svc status --name api --env test1
+copilot svc status --name chatbot --env test1
+copilot svc status --name ollama --env test1
+
+# Exec into the chatbot container and use 'nslookup' to check DNS
+copilot svc exec --name chatbot --env test --command "nslookup api"
+
+# Test if the chatbot can resolve the API service
+copilot svc exec --name chatbot --env test --command "nslookup api"
+
+# Test if the chatbot can resolve the Ollama service
+copilot svc exec --name chatbot --env test --command "nslookup ollama"
+
+Step 6: Test the Full Application
+copilot svc exec --name chatbot --env test --command "python -c \"import requests; r = requests.get('http://api:8000/health'); print('API Status:', r.status_code)\""
+
+# Check the environment configuration
+copilot env show --name test
+
+# Test DNS resolution from API container using Python
+copilot svc exec --name api --env test --command "python -c \"import socket; print(socket.gethostbyname('ollama'))\""
+
+# Test DNS resolution from Ollama container using Python
+copilot svc exec --name ollama --env test --command "python -c \"import socket; print(socket.gethostbyname('api'))\""
+
+# Test DNS resolution from chatbot container using Python
+copilot svc exec --name chatbot --env test --command "python -c \"import socket; print(socket.gethostbyname('api'))\""
