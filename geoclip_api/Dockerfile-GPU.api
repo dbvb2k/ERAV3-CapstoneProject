@@ -40,16 +40,8 @@ RUN pip install torch torchvision torchaudio --index-url https://download.pytorc
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional GPU-optimized packages
-RUN pip install --no-cache-dir \
-    accelerate \
-    transformers[torch] \
-    optimum[auto-gptq] \
-    auto-gptq \
-    bitsandbytes
-
-# Copy the application code
-COPY api.py .
+# Copy the GPU-optimized application code
+COPY api-gpu.py .
 COPY config.py .
 
 # Create logs directory
@@ -60,12 +52,26 @@ ENV CUDA_LAUNCH_BLOCKING=1
 ENV TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6"
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
-# Create a startup script to optimize GPU usage
-RUN echo '#!/bin/bash\n\
-echo "Setting up GPU environment..."\n\
-nvidia-smi\n\
-echo "Starting API server with GPU optimization..."\n\
-exec uvicorn api:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info' > /start.sh && chmod +x /start.sh
+# Create a proper startup script
+RUN cat > /start.sh << 'EOF'
+#!/bin/bash
+set -e
+
+echo "Setting up GPU environment..."
+
+# Check if GPU is available
+if command -v nvidia-smi &> /dev/null; then
+    echo "NVIDIA GPU detected:"
+    nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits
+else
+    echo "Warning: nvidia-smi not found. GPU may not be available."
+fi
+
+echo "Starting API server with GPU optimization..."
+exec uvicorn api-gpu:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info
+EOF
+
+RUN chmod +x /start.sh
 
 # Expose the port
 EXPOSE 8000
