@@ -1,0 +1,74 @@
+# Use NVIDIA CUDA base image for GPU support
+FROM nvidia/cuda:11.8-devel-ubuntu20.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CUDA_VISIBLE_DEVICES=0
+ENV OLLAMA_HOST=0.0.0.0
+ENV OLLAMA_ORIGINS=*
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Ollama repository and install Ollama
+RUN curl -fsSL https://ollama.ai/install.sh | sh
+
+# Create a startup script with GPU optimization and better error handling
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "Setting up GPU environment for Ollama..."\n\
+\n\
+# Check if GPU is available\n\
+if command -v nvidia-smi &> /dev/null; then\n\
+    echo "NVIDIA GPU detected:"\n\
+    nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits\n\
+    \n\
+    # Set GPU-specific environment variables\n\
+    export CUDA_VISIBLE_DEVICES=0\n\
+    export OLLAMA_GPU_LAYERS=35  # Use more GPU layers for better performance\n\
+    echo "GPU optimization enabled with ${OLLAMA_GPU_LAYERS} layers"\n\
+else\n\
+    echo "Warning: nvidia-smi not found. Running in CPU mode."\n\
+    export OLLAMA_GPU_LAYERS=0\n\
+fi\n\
+\n\
+echo "Starting Ollama server with GPU optimization..."\n\
+ollama serve &\n\
+OLLAMA_PID=$!\n\
+\n\
+echo "Waiting for Ollama to be ready..."\n\
+for i in {1..60}; do\n\
+  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
+    echo "Ollama is ready!"\n\
+    break\n\
+  fi\n\
+  echo "Waiting... ($i/60)"\n\
+  sleep 2\n\
+done\n\
+\n\
+echo "Pulling tinyllama model with GPU optimization..."\n\
+ollama pull tinyllama\n\
+\n\
+echo "Model pulled successfully. Listing models:"\n\
+ollama list\n\
+\n\
+# Show GPU memory usage after model load\n\
+if command -v nvidia-smi &> /dev/null; then\n\
+    echo "GPU memory usage after model load:"\n\
+    nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader,nounits\n\
+fi\n\
+\n\
+echo "Ollama service is ready with GPU optimization!"\n\
+wait $OLLAMA_PID' > /start.sh && chmod +x /start.sh
+
+# Expose the port
+EXPOSE 11434
+
+# Use the startup script
+CMD ["/start.sh"] 
