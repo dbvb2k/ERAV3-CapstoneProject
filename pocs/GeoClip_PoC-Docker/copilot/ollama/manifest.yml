@@ -10,17 +10,35 @@ type: Backend Service
 
 # Configuration for your containers and service.
 image:
-  build: Dockerfile.ollama
+  build: Dockerfile-GPU.ollama
   # Port exposed through your container to route traffic to it.
   port: 11434
 
-cpu: 2048       # Number of CPU units for the task (2 vCPU).
-memory: 12288   # Amount of memory in MiB used by the task (12GB).
+# GPU-optimized resource allocation for g4dn.2xlarge
+cpu: 8192       # Number of CPU units for the task (8 vCPU).
+memory: 32768   # Amount of memory in MiB used by the task (32GB).
 count: 1       # Number of tasks that should be running in your service.
 exec: true     # Enable running commands in your container.
+
+# GPU configuration (requires EC2 launch type)
+launch_type: EC2
+
+# GPU resource allocation for g4dn.2xlarge
+gpu:
+  count: 1
+  type: "g4dn.2xlarge"  # Specify GPU instance type
+
 network:
   connect: true # Enable Service Connect for intra-environment traffic between services.
-  
+
+# Environment variables for GPU optimization
+variables:
+  ENVIRONMENT: production
+  CUDA_VISIBLE_DEVICES: "0"
+  OLLAMA_GPU_LAYERS: "35"
+  OLLAMA_HOST: "0.0.0.0"
+  OLLAMA_ORIGINS: "*"
+
 # storage:
   # readonly_fs: true       # Limit to read-only access to mounted root filesystems.
 
@@ -45,4 +63,10 @@ healthcheck:
   interval: 30s
   timeout: 10s
   retries: 3
-  start_period: 120s
+  start_period: 180s  # Increased start period for GPU model loading
+
+# Environment-specific overrides
+environments:
+  test1:
+    variables:
+      OLLAMA_API_URL: http://ollama.test1.geoclip.local:11434/api/generate
