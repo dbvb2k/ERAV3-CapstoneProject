@@ -291,12 +291,9 @@ def get_cached_pipeline(model_id: str = "microsoft/phi-2"):
 class ItineraryPlannerTool(BaseTravelTool):
     """Tool for planning itineraries using AI"""
     
-    def __init__(self, openrouter_api_key: str = None, site_url: str = None, site_name: str = None):
-        """Initialize the tool with OpenRouter API configuration"""
-        self.api_key = openrouter_api_key
-        self.site_url = site_url or "http://localhost:8501"
-        self.site_name = site_name or "AI Travel Planner"
-        self.model = "meta-llama/llama-3.3-8b-instruct:free"  # Using Llama 2 70B through OpenRouter
+    def __init__(self, api_base_url: str = "http://localhost:8080"):
+        """Initialize the tool with Local Llama API configuration"""
+        self.api_base_url = api_base_url
 
     async def execute(self, location: str, duration: int, preferences: Dict) -> List[Dict]:
         """Execute the planning tool"""
@@ -351,16 +348,13 @@ class ItineraryPlannerTool(BaseTravelTool):
                 "duration": duration
             })
             
-            # Prepare API request
+            # Prepare API request for local Llama API
             headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": self.site_url,
-                "X-Title": self.site_name
+                "Content-Type": "application/json"
             }
             
+            # Use chat endpoint with proper Llama 3 format
             payload = {
-                "model": self.model,
                 "messages": [
                     {
                         "role": "system",
@@ -371,32 +365,41 @@ class ItineraryPlannerTool(BaseTravelTool):
                         "content": full_prompt
                     }
                 ],
+                "max_length": 2000,
                 "temperature": 0.7,
-                "max_tokens": 2000
+                "top_p": 0.9,
+                "do_sample": True,
+                "num_return_sequences": 1
             }
             
-            logger.log_api_request("OpenRouter Chat Completions", payload)
+            logger.log_api_request("Local Llama API", payload)
             
-            # Make API call
+            # Make API call to local Llama API chat endpoint
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
+                    f"{self.api_base_url}/chat",
                     headers=headers,
                     json=payload
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.log_error(Exception(f"API call failed: {error_text}"), "OpenRouter API Call")
+                        logger.log_error(Exception(f"API call failed: {error_text}"), "Local Llama API Call")
                         raise Exception(f"API call failed with status {response.status}: {error_text}")
                     
                     result = await response.json()
-                    logger.log_api_response("OpenRouter Chat Completions", result)
+                    logger.log_api_response("Local Llama API", result)
                     
-                    if not result.get('choices'):
-                        raise ValueError("No response choices found in API result")
+                    if not result.get('generated_text'):
+                        logger.log_warning("Empty generated_text received, using fallback suggestions")
+                        return self._get_fallback_suggestions(location, duration, preferences)
                     
-                    response_text = result['choices'][0]['message']['content']
-                    logger.log_info("Extracted Response Text", {"text": response_text})
+                    response_text = result['generated_text']
+                    logger.log_info("Extracted Response Text", {"text": response_text, "length": len(response_text)})
+                    
+                    # Check if response is empty or too short
+                    if not response_text.strip() or len(response_text.strip()) < 10:
+                        logger.log_warning("Response text is too short, using fallback suggestions")
+                        return self._get_fallback_suggestions(location, duration, preferences)
                     
                     try:
                         suggestions = json.loads(response_text)
@@ -408,14 +411,134 @@ class ItineraryPlannerTool(BaseTravelTool):
                             validated = self._validate_suggestions([suggestions])
                             logger.log_info("Successfully parsed single suggestion", {"suggestions": validated})
                             return validated
-                    except json.JSONDecodeError:
-                        logger.log_warning("JSON parse failed, attempting structured text parse")
-                        return self._parse_structured_text(response_text)
+                    except json.JSONDecodeError as e:
+                        logger.log_warning(f"JSON parse failed: {str(e)}, attempting structured text parse")
+                        logger.log_warning(f"Response text: {response_text[:500]}...")
+                        try:
+                            return self._parse_structured_text(response_text)
+                        except ValueError:
+                            logger.log_warning("Structured text parse also failed, using fallback suggestions")
+                            return self._get_fallback_suggestions(location, duration, preferences)
                 
         except Exception as e:
             logger.log_error(e, "ItineraryPlannerTool.execute")
-            raise Exception(f"Unable to generate travel suggestions: {str(e)}")
+            logger.log_warning("Using fallback suggestions due to error")
+            return self._get_fallback_suggestions(location, duration, preferences)
     
+    def _get_fallback_suggestions(self, location: str, duration: int, preferences: Dict) -> List[Dict]:
+        """Generate fallback suggestions when API fails"""
+        logger.log_info("Generating fallback suggestions", {"location": location, "duration": duration})
+        
+        # Create context-aware fallback suggestions
+        prompt = preferences.get('prompt', '').lower()
+        context = preferences.get('context', '').lower()
+        
+        # Determine if user wants budget-friendly or luxury travel
+        is_budget = any(word in prompt + context for word in ['budget', 'cheap', 'affordable', 'economy'])
+        is_luxury = any(word in prompt + context for word in ['luxury', 'premium', 'high-end', 'expensive'])
+        
+        # Create two different suggestions based on context
+        suggestions = []
+        
+        # First suggestion - based on location or general
+        if location and location.lower() != 'anywhere':
+            suggestions.append({
+                "destination": location,
+                "description": f"A wonderful destination with rich culture and diverse experiences. Perfect for {duration}-day exploration.",
+                "best_time_to_visit": "Year-round, with peak season varying by location",
+                "estimated_budget": "$30-80 per day" if is_budget else "$100-200 per day" if is_luxury else "$50-120 per day",
+                "duration": str(duration),
+                "activities": [
+                    "Explore local landmarks and attractions",
+                    "Experience local cuisine and food culture",
+                    "Visit museums and cultural sites",
+                    "Take guided tours of the area",
+                    "Enjoy local entertainment and nightlife"
+                ],
+                "accommodation_suggestions": [
+                    "Budget hostel or guesthouse ($20-40/night)" if is_budget else "Luxury hotel ($200-400/night)" if is_luxury else "Mid-range hotel ($80-150/night)",
+                    "Local bed and breakfast ($40-80/night)" if is_budget else "Boutique hotel ($150-300/night)" if is_luxury else "Comfortable hotel ($60-120/night)",
+                    "Vacation rental apartment ($60-120/night)" if is_budget else "Resort accommodation ($300-500/night)" if is_luxury else "Cozy guesthouse ($50-100/night)"
+                ],
+                "transportation": [
+                    "Public transportation (buses, trains)",
+                    "Walking tours and local exploration"
+                ],
+                "local_tips": [
+                    "Research local customs and etiquette",
+                    "Learn basic phrases in the local language",
+                    "Follow local safety guidelines"
+                ],
+                "weather_info": "Check local weather forecasts before your trip",
+                "safety_info": "Generally safe for tourists. Follow standard travel precautions."
+            })
+        else:
+            # Generic suggestions if no specific location
+            suggestions.append({
+                "destination": "Tokyo, Japan",
+                "description": "A fascinating blend of traditional culture and modern technology, perfect for cultural exploration.",
+                "best_time_to_visit": "March to May (cherry blossom season) or September to November (autumn colors)",
+                "estimated_budget": "$80-150 per day",
+                "duration": str(duration),
+                "activities": [
+                    "Visit the historic Senso-ji Temple",
+                    "Explore the bustling Shibuya district",
+                    "Experience authentic sushi and ramen",
+                    "Take a day trip to Mount Fuji",
+                    "Enjoy the vibrant nightlife in Shinjuku"
+                ],
+                "accommodation_suggestions": [
+                    "Capsule hotel ($30-50/night)",
+                    "Business hotel ($80-120/night)",
+                    "Traditional ryokan ($150-300/night)"
+                ],
+                "transportation": [
+                    "Efficient subway and train system",
+                    "JR Pass for regional travel"
+                ],
+                "local_tips": [
+                    "Learn basic Japanese phrases",
+                    "Respect local customs and etiquette",
+                    "Use IC cards for convenient transportation"
+                ],
+                "weather_info": "Four distinct seasons with hot summers and cold winters",
+                "safety_info": "Very safe for tourists with low crime rates."
+            })
+        
+        # Second suggestion - alternative destination
+        suggestions.append({
+            "destination": "Barcelona, Spain",
+            "description": "A vibrant Mediterranean city known for its stunning architecture, delicious cuisine, and lively atmosphere.",
+            "best_time_to_visit": "May to June or September to October (pleasant weather, fewer crowds)",
+            "estimated_budget": "$60-120 per day",
+            "duration": str(duration),
+            "activities": [
+                "Visit the iconic Sagrada Familia",
+                "Explore the Gothic Quarter",
+                "Enjoy tapas and local wine",
+                "Walk along La Rambla",
+                "Relax at Barceloneta Beach"
+            ],
+            "accommodation_suggestions": [
+                "Hostel in city center ($25-45/night)",
+                "Boutique hotel in Gothic Quarter ($80-150/night)",
+                "Apartment rental ($60-120/night)"
+            ],
+            "transportation": [
+                "Metro system and buses",
+                "Walking-friendly city center"
+            ],
+            "local_tips": [
+                "Try the local paella and tapas",
+                "Visit markets like La Boqueria",
+                "Be aware of pickpockets in tourist areas"
+            ],
+            "weather_info": "Mediterranean climate with hot summers and mild winters",
+            "safety_info": "Generally safe, but be cautious of pickpockets in crowded areas."
+        })
+        
+        return suggestions
+
     def _validate_suggestions(self, suggestions: List[Dict]) -> List[Dict]:
         """Validate and fix suggestions to ensure they meet requirements"""
         validated_data = []

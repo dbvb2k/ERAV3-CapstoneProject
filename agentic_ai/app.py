@@ -59,9 +59,10 @@ def initialize_mcp_server():
         
         # Initialize the planner tool
         planner_tool = ItineraryPlannerTool(
-            openrouter_api_key=openrouter_api_key,
-            site_url=site_url,
-            site_name=site_name
+            # openrouter_api_key=openrouter_api_key,
+            # site_url=site_url,
+            # site_name=site_name
+            api_base_url="http://localhost:8080"
         )
         
         # Initialize travel utils
@@ -405,9 +406,9 @@ if mode == "Get Travel Suggestions":
                 try:
                     print(f"\n=== Getting best time to visit for {destination} ===")
                     planner = ItineraryPlannerTool(
-                        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
-                        site_url=os.getenv("SITE_URL", "http://localhost:8501"),
-                        site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+                        # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
+                        # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
                     )
                     suggestions = await planner.execute(destination, 7, {"focus": "best time"})
                     best_time = suggestions[0].get("best_time_to_visit", "Contact travel agent for details") if suggestions and len(suggestions) > 0 else "Contact travel agent for details"
@@ -422,9 +423,10 @@ if mode == "Get Travel Suggestions":
                 try:
                     print(f"\n=== Getting estimated budget for {destination} ===")
                     planner = ItineraryPlannerTool(
-                        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
-                        site_url=os.getenv("SITE_URL", "http://localhost:8501"),
-                        site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+                        # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
+                        # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        api_base_url="http://localhost:8080"
                     )
                     suggestions = await planner.execute(destination, 7, {"focus": "budget"})
                     budget = suggestions[0].get("estimated_budget", "Varies by season") if suggestions and len(suggestions) > 0 else "Varies by season"

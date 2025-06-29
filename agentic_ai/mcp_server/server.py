@@ -12,7 +12,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMes
 from langchain.tools.render import format_tool_to_openai_function
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.memory import ConversationBufferWindowMemory
-from .openrouter_llm import OpenRouterLLM
+from .openrouter_llm import LocalLlamaLLM
 import uvicorn
 import os
 import asyncio
@@ -208,20 +208,12 @@ class MCPServer:
         self.tools[tool_name] = tool
 
     def setup_agent(self, tools):
-        """Set up the LangChain agent with OpenRouter LLM."""
-        # Initialize OpenRouter LLM
-        openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
-        if not openrouter_api_key:
-            raise ValueError("OPENROUTER_API_KEY environment variable not set")
-            
-        llm = OpenRouterLLM(
-            api_key=openrouter_api_key,
-            model="meta-llama/llama-3.3-8b-instruct:free",
-            # model="mistralai/mistral-7b-instruct",  # Using a smaller, cheaper model
+        """Set up the LangChain agent with Local Llama LLM."""
+        # Initialize Local Llama LLM
+        llm = LocalLlamaLLM(
+            api_base_url="http://localhost:8080",
             temperature=0.7,
-            max_tokens=2000,
-            site_url=os.getenv('SITE_URL', 'http://localhost:8501'),
-            site_name=os.getenv('SITE_NAME', 'AI Travel Planner')
+            max_length=2000
         )
         
         # Create the prompt template

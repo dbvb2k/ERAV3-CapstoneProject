@@ -256,6 +256,20 @@ variables:
   OLLAMA_API_URL: http://ollama.test.geoclip.local:11434/api/generate
 
 ========================================================================================================================================================================
+GPU Deployment 
+
+# Create GPU environment
+copilot env init --name test1-gpu --profile default --app geoclip
+
+# Deploy GPU-optimized Ollama
+copilot svc deploy --name ollama --env test1-gpu
+
+# Update and deploy chatbot to use GPU Ollama
+copilot svc deploy --name chatbot --env test1-gpu
+
+========================================================================================================================================================================
+
+
 
 Trouble shooting commands
 # Check service status
