@@ -433,6 +433,10 @@ if mode == "Get Travel Suggestions":
                 # Pre-populate the travel input with the identified location
                 if not travel_input or travel_input.strip() == "I want to travel for about a week, interested in cultural experiences and good food.":
                     travel_input = f"I want to travel to {st.session_state.location_info['location_name']} for about a week, interested in cultural experiences and good food."
+                else:
+                    # If user has already entered something, enhance it with location info
+                    if st.session_state.location_info['location_name'].lower() not in travel_input.lower():
+                        travel_input = f"I want to travel to {st.session_state.location_info['location_name']}. {travel_input}"
             
             # Define async function to make the request
             async def get_suggestions():
@@ -453,15 +457,21 @@ if mode == "Get Travel Suggestions":
                             "conversation_history": st.session_state.conversation_history
                         }
                         
+                        print(f"\n=== Sending request to agent ===")
+                        print(f"Query: {travel_input}")
+                        print(f"Context keys: {list(context.keys())}")
+                        
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=30.0
+                            timeout=60.0  # Increased timeout to 60 seconds
                         )
                         print(f"\n=== Agent response received: {response.status_code} ===")
                         
                         if response.status_code == 200:
                             result = response.json()
+                            print(f"\n=== Full result: {result} ===")
+                            
                             if isinstance(result, dict) and "result" in result:
                                 suggestions = result["result"].get("output", "")
                                 print(f"\n=== Raw suggestions from agent: ===\n{suggestions}")
@@ -479,10 +489,24 @@ if mode == "Get Travel Suggestions":
                                 else:
                                     # This is a suggestions response
                                     return {"type": "suggestions", "content": suggestions}
-                            return {"type": "error", "content": "No result found"}
+                            else:
+                                print(f"\n=== Unexpected result structure: {result} ===")
+                                return {"type": "error", "content": "Unexpected response structure"}
                         else:
-                            st.error(f"Error from agent: {response.text}")
-                            return {"type": "error", "content": response.text}
+                            error_text = response.text
+                            print(f"\n=== Agent error: {response.status_code} - {error_text} ===")
+                            st.error(f"Error from agent: {error_text}")
+                            return {"type": "error", "content": error_text}
+                except httpx.TimeoutException:
+                    error_msg = "Request timed out. The server is taking too long to respond. Please try again."
+                    print(f"\n=== Timeout error: {error_msg} ===")
+                    st.error(error_msg)
+                    return {"type": "error", "content": error_msg}
+                except httpx.ConnectError:
+                    error_msg = "Cannot connect to the travel agent server. Please ensure the MCP server is running."
+                    print(f"\n=== Connection error: {error_msg} ===")
+                    st.error(error_msg)
+                    return {"type": "error", "content": error_msg}
                 except Exception as e:
                     print(f"\n=== Error in get_suggestions: {str(e)} ===")
                     print(f"Error details: {traceback.format_exc()}")
@@ -592,27 +616,65 @@ if mode == "Get Travel Suggestions":
                 # Parse and display suggestions
                 suggestions = result["content"]
                 
+                # First, try to display the raw response to see what we're working with
+                st.subheader("Travel Suggestions")
+                st.markdown("**Raw Response:**")
+                st.markdown(suggestions)
+                
                 # Convert the suggestions into a structured format
                 async def process_suggestions(suggestions_text):
                     """Process suggestions and add additional information"""
                     suggestions_list = []
                     if isinstance(suggestions_text, str):
-                        # Parse the text response into structured suggestions
+                        # Try multiple parsing strategies
                         import re
-                        # Look for bullet points or numbered items
+                        
+                        # Strategy 1: Look for bullet points or numbered items
                         suggestion_items = re.split(r'\n\s*[\*\•\-]\s*|\n\d+\.\s+', suggestions_text)
                         suggestion_items = [s.strip() for s in suggestion_items if s.strip()]
                         
-                        for item in suggestion_items[:2]:  # Limit to 2 suggestions
+                        # Strategy 2: If no bullet points found, look for location names
+                        if not suggestion_items or len(suggestion_items) < 2:
+                            # Look for common location patterns
+                            location_patterns = [
+                                r'([A-Z][a-z]+(?:[,\s]+[A-Z][a-z]+)*)',
+                                r'([A-Z][a-z]+(?:[,\s]+[A-Z][a-z]+)*\s+for\s+.+)',
+                                r'Location:\s*([A-Z][a-z]+(?:[,\s]+[A-Z][a-z]+)*)'
+                            ]
+                            
+                            for pattern in location_patterns:
+                                matches = re.findall(pattern, suggestions_text)
+                                if matches:
+                                    suggestion_items = matches[:2]  # Take first 2 matches
+                                    break
+                        
+                        # Strategy 3: If still no items, create a single suggestion from the text
+                        if not suggestion_items:
+                            # Extract location from context if available
+                            location_name = "Unknown Location"
+                            if st.session_state.location_info:
+                                location_name = st.session_state.location_info['location_name']
+                            
+                            suggestion_items = [location_name]
+                        
+                        print(f"\n=== Found {len(suggestion_items)} suggestion items ===")
+                        
+                        for i, item in enumerate(suggestion_items[:2]):  # Limit to 2 suggestions
                             if item:
+                                # Clean up the destination name
                                 destination = item.split(" for ")[0] if " for " in item else item
-                                description = item.split(" for ")[1] if " for " in item else ""
+                                description = item.split(" for ")[1] if " for " in item else f"Great destination for travel experiences"
                                 
-                                print(f"\n=== Processing suggestion for {destination} ===")
+                                # Remove common prefixes and clean up
+                                destination = re.sub(r'^[\*\•\-]\s*', '', destination)
+                                destination = re.sub(r'^\d+\.\s*', '', destination)
+                                destination = destination.strip()
+                                
+                                print(f"\n=== Processing suggestion {i+1} for {destination} ===")
                                 
                                 # Create suggestion with additional information
                                 suggestion = {
-                                    "destination": destination.replace('*', '').strip(),
+                                    "destination": destination,
                                     "description": description,
                                     "best_time_to_visit": await get_best_time(destination),
                                     "estimated_budget": await get_estimated_budget(destination),
@@ -630,9 +692,10 @@ if mode == "Get Travel Suggestions":
                 # Process suggestions
                 suggestions_list = asyncio.run(process_suggestions(suggestions))
                 
-                # Display suggestions
+                # Display structured suggestions if available
                 if suggestions_list:
-                    st.subheader("Travel Suggestions")
+                    st.markdown("---")
+                    st.subheader("Structured Travel Information")
                     for i, suggestion in enumerate(suggestions_list, 1):
                         print(f"\n=== Displaying suggestion {i} ===")
                         print(f"Type: {type(suggestion)}")
@@ -707,8 +770,7 @@ if mode == "Get Travel Suggestions":
                             st.error(f"Error displaying suggestion {i}: {str(e)}")
                             print(f"Error details: {traceback.format_exc()}")
                 else:
-                    st.warning("No structured suggestions found. Here's the raw response:")
-                    st.markdown(suggestions)
+                    st.warning("Could not parse structured suggestions from the response.")
                     
             elif result["type"] == "error":
                 st.error(f"An error occurred: {result['content']}")
@@ -766,8 +828,15 @@ else:  # Create Detailed Itinerary
                 # Use MCP server's agent to create itinerary
                 async def create_itinerary():
                     async with httpx.AsyncClient() as client:
+                        # Create the query with location information if available
+                        query = f"Create a detailed itinerary for a trip from {origin} to {destination}"
+                        
+                        # Enhance query with location information if available
+                        if st.session_state.location_info:
+                            query += f" (Location identified from image: {st.session_state.location_info['location_name']} at coordinates {st.session_state.location_info['latitude']}, {st.session_state.location_info['longitude']})"
+                        
                         request_data = {
-                            "query": f"Create a detailed itinerary for a trip from {origin} to {destination}",
+                            "query": query,
                             "context": context,
                             "session_id": st.session_state.conversation_session_id,
                             "conversation_history": st.session_state.conversation_history
@@ -775,7 +844,7 @@ else:  # Create Detailed Itinerary
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=30.0
+                            timeout=60.0  # Increased timeout to 60 seconds
                         )
                         return response.json()
                 
@@ -868,12 +937,19 @@ if st.button("Send Follow-up", key="send_follow_up"):
                 # Send follow-up question
                 async def send_follow_up():
                     async with httpx.AsyncClient() as client:
-                        response = await client.post(
-                            f"{AGENT_URL}/agent/execute",
-                            json=request_data,
-                            timeout=30.0
-                        )
-                        return response.json()
+                        try:
+                            response = await client.post(
+                                f"{AGENT_URL}/agent/execute",
+                                json=request_data,
+                                timeout=60.0  # Increased timeout to 60 seconds
+                            )
+                            return response.json()
+                        except httpx.TimeoutException:
+                            return {"status": "error", "error": "Request timed out. Please try again."}
+                        except httpx.ConnectError:
+                            return {"status": "error", "error": "Cannot connect to the travel agent server."}
+                        except Exception as e:
+                            return {"status": "error", "error": f"An error occurred: {str(e)}"}
                 
                 result = asyncio.run(send_follow_up())
                 
