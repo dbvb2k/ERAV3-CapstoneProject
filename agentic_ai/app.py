@@ -13,6 +13,8 @@ import httpx
 import json
 import logging
 import traceback
+import requests
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +40,11 @@ if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 if 'current_mode' not in st.session_state:
     st.session_state.current_mode = "Get Travel Suggestions"
+# Initialize session state for image upload and location
+if 'uploaded_image' not in st.session_state:
+    st.session_state.uploaded_image = None
+if 'location_info' not in st.session_state:
+    st.session_state.location_info = None
 
 # Initialize the MCP server and tools
 @st.cache_resource(show_spinner="Loading AI Travel Planner...")
@@ -102,6 +109,8 @@ with col1:
     if st.button("🔄 New Conversation"):
         st.session_state.conversation_session_id = None
         st.session_state.conversation_history = []
+        st.session_state.uploaded_image = None
+        st.session_state.location_info = None
         st.rerun()
 with col2:
     if st.button("🗑️ Clear History"):
@@ -110,6 +119,124 @@ with col2:
 with col3:
     if st.session_state.conversation_session_id:
         st.info(f"Session: {st.session_state.conversation_session_id[:8]}...")
+
+# Add image upload section
+st.markdown("---")
+st.subheader("📸 Upload Location Image (Optional)")
+
+# Define GeoCLIP API URL
+GEOCLIP_API_URL = os.getenv('GEOCLIP_API_URL', 'http://localhost:8090/predict')
+
+# Create two columns for image upload and display
+img_col1, img_col2 = st.columns([1, 1])
+
+with img_col1:
+    uploaded_file = st.file_uploader(
+        "Choose an image to identify location", 
+        type=["jpg", "jpeg", "png"],
+        help="Upload an image of a location to automatically identify the destination"
+    )
+    
+    if uploaded_file:
+        # Store the uploaded image
+        st.session_state.uploaded_image = uploaded_file
+        
+        # Process the image with GeoCLIP API
+        if st.button("🔍 Identify Location"):
+            try:
+                with st.spinner("Identifying location from image..."):
+                    # Prepare the file for API request
+                    files = {
+                        "file": (
+                            uploaded_file.name,
+                            uploaded_file.getvalue(),
+                            uploaded_file.type or "image/jpeg"
+                        )
+                    }
+                    
+                    # Make request to GeoCLIP API
+                    response = requests.post(GEOCLIP_API_URL, files=files, timeout=30)
+                    
+                    if response.status_code == 200:
+                        predictions = response.json()
+                        if predictions and len(predictions) > 0:
+                            st.session_state.location_info = predictions[0]
+                            st.success(f"✅ Location identified: {st.session_state.location_info['location_name']}")
+                            
+                            # Display location details
+                            with st.expander("📍 Location Details"):
+                                st.write(f"**Location:** {st.session_state.location_info['location_name']}")
+                                st.write(f"**Coordinates:** {st.session_state.location_info['latitude']}, {st.session_state.location_info['longitude']}")
+                                if 'confidence' in st.session_state.location_info:
+                                    st.write(f"**Confidence:** {st.session_state.location_info['confidence']:.2f}")
+                        else:
+                            st.warning("⚠️ No location found in the image. Please try a different image.")
+                    else:
+                        st.error(f"❌ Error from GeoCLIP API: {response.text}")
+                        
+            except requests.exceptions.ConnectionError:
+                st.error("❌ Cannot connect to GeoCLIP API. Please ensure the service is running.")
+            except Exception as e:
+                st.error(f"❌ Error processing image: {str(e)}")
+
+with img_col2:
+    # Display uploaded image and location info
+    if st.session_state.uploaded_image:
+        st.write("**Uploaded Image:**")
+        image = Image.open(st.session_state.uploaded_image).convert("RGB")
+        
+        # Resize image to fit 300x300 container while maintaining aspect ratio
+        def resize_image_with_aspect_ratio(img, target_size=(300, 200)):
+            """Resize image to fit target size while maintaining aspect ratio"""
+            # Get original dimensions
+            original_width, original_height = img.size
+            
+            # Calculate aspect ratios
+            target_aspect = target_size[0] / target_size[1]
+            original_aspect = original_width / original_height
+            
+            if original_aspect > target_aspect:
+                # Image is wider than target, fit to width
+                new_width = target_size[0]
+                new_height = int(target_size[0] / original_aspect)
+            else:
+                # Image is taller than target, fit to height
+                new_height = target_size[1]
+                new_width = int(target_size[1] * original_aspect)
+            
+            # Resize image
+            resized_image = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Create a new image with target size and white background
+            final_image = Image.new('RGB', target_size, (255, 255, 255))
+            
+            # Calculate position to center the resized image
+            x_offset = (target_size[0] - new_width) // 2
+            y_offset = (target_size[1] - new_height) // 2
+            
+            # Paste the resized image onto the background
+            final_image.paste(resized_image, (x_offset, y_offset))
+            
+            return final_image
+        
+        # Resize the image
+        display_image = resize_image_with_aspect_ratio(image, (300, 200))
+        
+        # Display the image in a container
+        st.image(display_image, caption="Uploaded Image", use_container_width=False, width=300)
+        
+        if st.session_state.location_info:
+            st.write("**Identified Location:**")
+            st.info(f"📍 {st.session_state.location_info['location_name']}")
+            
+            # Add a button to use this location
+            if st.button("🎯 Use This Location"):
+                st.success(f"Location '{st.session_state.location_info['location_name']}' will be used in your travel planning!")
+        else:
+            st.write("**Status:** No location identified yet")
+    else:
+        st.write("**No image uploaded**")
+        st.info("Upload an image to automatically identify the location for your travel planning.")
 
 # Add export functionality
 if st.session_state.conversation_history:
@@ -294,6 +421,18 @@ if mode == "Get Travel Suggestions":
                 "preferences": preferences.model_dump(exclude_none=True),
                 "mode": "suggestions"
             }
+            
+            # Add location information if available from uploaded image
+            if st.session_state.location_info:
+                context["location_information"] = {
+                    "location_name": st.session_state.location_info['location_name'],
+                    "latitude": st.session_state.location_info['latitude'],
+                    "longitude": st.session_state.location_info['longitude'],
+                    "confidence": st.session_state.location_info.get('confidence', 0.0)
+                }
+                # Pre-populate the travel input with the identified location
+                if not travel_input or travel_input.strip() == "I want to travel for about a week, interested in cultural experiences and good food.":
+                    travel_input = f"I want to travel to {st.session_state.location_info['location_name']} for about a week, interested in cultural experiences and good food."
             
             # Define async function to make the request
             async def get_suggestions():
@@ -582,7 +721,9 @@ else:  # Create Detailed Itinerary
     col1, col2 = st.columns(2)
     
     with col1:
-        destination = st.text_input("Destination", "Paris, France")
+        # Pre-populate destination if location info is available
+        default_destination = st.session_state.location_info['location_name'] if st.session_state.location_info else "Paris, France"
+        destination = st.text_input("Destination", default_destination)
         start_date = st.date_input(
             "Start Date",
             datetime.now() + timedelta(days=30)
@@ -612,6 +753,15 @@ else:  # Create Detailed Itinerary
                     "travel_request": travel_request.__dict__,
                     "mode": "itinerary"
                 }
+                
+                # Add location information if available from uploaded image
+                if st.session_state.location_info:
+                    context["location_information"] = {
+                        "location_name": st.session_state.location_info['location_name'],
+                        "latitude": st.session_state.location_info['latitude'],
+                        "longitude": st.session_state.location_info['longitude'],
+                        "confidence": st.session_state.location_info.get('confidence', 0.0)
+                    }
                 
                 # Use MCP server's agent to create itinerary
                 async def create_itinerary():
@@ -662,7 +812,7 @@ if st.session_state.conversation_history:
         st.write("**Recent conversation summary:**")
         recent_messages = st.session_state.conversation_history[-4:]  # Show last 4 messages
         for msg in recent_messages:
-            role_icon = "��" if msg["role"] == "user" else "🤖"
+            role_icon = "👤" if msg["role"] == "user" else "🤖"
             st.write(f"{role_icon} **{msg['role'].title()}:** {msg['content'][:100]}{'...' if len(msg['content']) > 100 else ''}")
 
 # Example follow-up questions
@@ -697,6 +847,15 @@ if st.button("Send Follow-up", key="send_follow_up"):
                     "preferences": preferences.model_dump(exclude_none=True),
                     "mode": "follow_up"
                 }
+                
+                # Add location information if available from uploaded image
+                if st.session_state.location_info:
+                    context["location_information"] = {
+                        "location_name": st.session_state.location_info['location_name'],
+                        "latitude": st.session_state.location_info['latitude'],
+                        "longitude": st.session_state.location_info['longitude'],
+                        "confidence": st.session_state.location_info.get('confidence', 0.0)
+                    }
                 
                 # Prepare request with conversation state
                 request_data = {

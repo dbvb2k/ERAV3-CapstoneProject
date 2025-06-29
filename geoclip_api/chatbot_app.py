@@ -61,9 +61,10 @@ st.set_page_config(
 )
 
 # Configuration
-API_URL = "http://localhost:8000/predict"  # GeoCLIP API endpoint
-OLLAMA_API_URL = "http://localhost:11434/api/generate"  # Ollama API endpoint
-MODEL_NAME = "llama3.1:8b-instruct-q4_K_M"  # Ollama model name
+# API_URL = "http://localhost:8000/predict"  # GeoCLIP API endpoint
+API_URL = os.getenv('API_URL', 'http://localhost:8000/predict')
+OLLAMA_API_URL = os.getenv('OLLAMA_API_URL', 'http://localhost:11434/api/generate')
+MODEL_NAME = os.getenv('MODEL_NAME', 'llama2:7b')  # Ollama model name - using a more common model
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -203,6 +204,10 @@ Remember to:
 
         # Make request to Ollama API
         response = requests.post(OLLAMA_API_URL, json=payload)
+
+        print("--------------------------------")
+        print(f"Ollama URL: {OLLAMA_API_URL}")
+        print("--------------------------------")
         
         if response.status_code == 200:
             result = response.json()
