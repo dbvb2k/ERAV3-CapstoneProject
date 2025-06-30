@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  llama-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env  
+    ports:
+      - "8080:8080"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - IS_CONTAINER=true
+      - LOG_LEVEL=INFO
+      - API_HOST=0.0.0.0
+      - API_PORT=8080
+    volumes:
+      - ./logs:/app/logs
+      - ./model:/app/model
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s 

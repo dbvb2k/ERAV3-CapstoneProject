@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV CUDA_VISIBLE_DEVICES=0
 ENV IS_CONTAINER=true
 
-# Set default environment variables (can be overridden)
+# Set default environment variables
 ENV API_HOST=0.0.0.0
 ENV API_PORT=8080
 ENV LOG_LEVEL=INFO
@@ -19,7 +19,7 @@ ENV CORS_HEADERS=*
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (removed CUDA packages that aren't available in Debian)
+# Install system dependencies including CUDA runtime
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -31,12 +31,19 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    # CUDA runtime libraries
+    cuda-runtime-11-8 \
+    cuda-cudart-11-8 \
+    cuda-cublas-11-8 \
+    cuda-cublas-dev-11-8 \
+    cuda-cudnn8 \
+    cuda-cudnn8-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
 RUN python -m pip install --upgrade pip
 
-# Install PyTorch with CUDA support (PyTorch includes CUDA runtime)
+# Install PyTorch with CUDA support
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Copy requirements and install Python dependencies
@@ -58,13 +65,10 @@ ENV CUDA_LAUNCH_BLOCKING=1
 ENV TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6"
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
-# Create startup script with proper Unix line endings
+# Create startup script
 RUN echo '#!/bin/bash' > /start.sh && \
     echo 'set -e' >> /start.sh && \
-    echo '' >> /start.sh && \
     echo 'echo "Setting up Llama API environment..."' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo '# Check if GPU is available' >> /start.sh && \
     echo 'if command -v nvidia-smi &> /dev/null; then' >> /start.sh && \
     echo '    echo "NVIDIA GPU detected:"' >> /start.sh && \
     echo '    nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits' >> /start.sh && \
@@ -72,7 +76,6 @@ RUN echo '#!/bin/bash' > /start.sh && \
     echo '    echo "Warning: nvidia-smi not found. GPU may not be available."' >> /start.sh && \
     echo '    echo "Starting in CPU-only mode..."' >> /start.sh && \
     echo 'fi' >> /start.sh && \
-    echo '' >> /start.sh && \
     echo 'echo "Starting Llama API server..."' >> /start.sh && \
     echo 'exec uvicorn llama_api:app --host 0.0.0.0 --port 8080 --workers 1 --log-level info' >> /start.sh
 
