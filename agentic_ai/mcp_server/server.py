@@ -12,7 +12,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMes
 from langchain.tools.render import format_tool_to_openai_function
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.memory import ConversationBufferWindowMemory
-from .openrouter_llm import LocalLlamaLLM
+from .fallback_llm import FallbackLLM
 import uvicorn
 import os
 import asyncio
@@ -254,10 +254,9 @@ class MCPServer:
         return formatted_context.strip()
 
     def setup_agent(self, tools):
-        """Set up the LangChain agent with Local Llama LLM."""
-        # Initialize Local Llama LLM
-        llm = LocalLlamaLLM(
-            api_base_url="http://localhost:8080",
+        """Set up the LangChain agent with Fallback LLM (Local Llama + OpenRouter)."""
+        # Initialize Fallback LLM
+        llm = FallbackLLM(
             temperature=0.7,
             max_length=2000
         )
@@ -327,7 +326,8 @@ IMPORTANT:
         # Create the agent executor with memory
         self.agent_executor = AgentExecutor.from_agent_and_tools(
             agent=agent,
-            tools=tools,            verbose=True,
+            tools=tools,
+            verbose=True,
             handle_parsing_errors=True,
             max_iterations=3
         )

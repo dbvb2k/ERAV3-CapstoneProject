@@ -1,0 +1,26 @@
+# Minimal requirements for Llama API inference service
+# Core ML frameworks for inference
+torch==2.1.0
+transformers==4.36.2
+tokenizers==0.15.0
+accelerate==0.24.1
+peft==0.6.2
+bitsandbytes==0.41.3.post2
+
+# Web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Utilities
+pydantic==2.5.2
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+
+# Scientific computing
+numpy==1.24.4
+scipy==1.10.1
+safetensors==0.4.1
+
+# Logging and monitoring
+python-json-logger==2.0.7 

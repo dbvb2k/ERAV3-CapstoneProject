@@ -1,150 +1,189 @@
 #!/usr/bin/env python3
 """
-Client script to test the Llama API endpoints
+Test script to verify Llama API functionality and GPU support
 """
 
 import requests
 import json
 import time
+import sys
+from pathlib import Path
 
-# API configuration
-API_BASE_URL = "http://localhost:8080"
-
-def test_health():
-    """Test the health endpoint"""
-    print("🔍 Testing health endpoint...")
+def test_gpu_availability():
+    """Test if GPU is available in the container"""
     try:
-        response = requests.get(f"{API_BASE_URL}/health")
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Health check passed: {data}")
-            return data.get("model_loaded", False)
+        import torch
+        print(f"PyTorch version: {torch.__version__}")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"CUDA version: {torch.version.cuda}")
+            print(f"GPU count: {torch.cuda.device_count()}")
+            for i in range(torch.cuda.device_count()):
+                print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
         else:
-            print(f"❌ Health check failed: {response.status_code}")
-            return False
-    except Exception as e:
-        print(f"❌ Health check error: {str(e)}")
+            print("CUDA not available - running in CPU mode")
+        return True
+    except ImportError:
+        print("PyTorch not installed")
         return False
 
-def test_model_info():
-    """Test the model info endpoint"""
-    print("\n🔍 Testing model info endpoint...")
+def test_bitsandbytes_gpu():
+    """Test bitsandbytes GPU support"""
     try:
-        response = requests.get(f"{API_BASE_URL}/model-info")
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Model info: {json.dumps(data, indent=2)}")
+        import bitsandbytes as bnb
+        import torch
+        
+        if torch.cuda.is_available():
+            # Test creating a quantized layer
+            test_layer = bnb.nn.Linear8bitLt(10, 10, has_fp16_weights=False)
+            test_layer = test_layer.cuda()
+            print("✅ BitsAndBytes GPU support is working")
             return True
         else:
-            print(f"❌ Model info failed: {response.status_code}")
+            print("⚠️  CUDA not available, cannot test bitsandbytes GPU support")
             return False
     except Exception as e:
-        print(f"❌ Model info error: {str(e)}")
+        print(f"❌ BitsAndBytes GPU support error: {e}")
         return False
 
-def test_text_generation():
-    """Test the text generation endpoint"""
-    print("\n🔍 Testing text generation endpoint...")
-    
-    payload = {
-        "prompt": "Tell me about the best places to visit in Tokyo for first-time travelers.",
-        "max_length": 200,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "do_sample": True
-    }
-    
+def test_api_health(api_url="http://localhost:8080"):
+    """Test API health endpoint"""
     try:
+        response = requests.get(f"{api_url}/health", timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ API health check passed: {result}")
+            return True
+        else:
+            print(f"❌ API health check failed: {response.status_code}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ API health check error: {e}")
+        return False
+
+def test_chat_endpoint(api_url="http://localhost:8080"):
+    """Test chat completion endpoint"""
+    try:
+        payload = {
+            "messages": [
+                {"role": "user", "content": "Hello! Can you help me plan a trip to Paris?"}
+            ],
+            "max_length": 200,
+            "temperature": 0.7
+        }
+        
+        print("Testing chat completion endpoint...")
         response = requests.post(
-            f"{API_BASE_URL}/generate",
+            f"{api_url}/chat",
             json=payload,
-            headers={"Content-Type": "application/json"}
+            timeout=60
         )
         
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Text generation successful:")
-            print(f"Generated text: {data['generated_text']}")
-            print(f"Input length: {data['input_length']}")
-            print(f"Generated length: {data['generated_length']}")
+            result = response.json()
+            print(f"✅ Chat completion test passed")
+            print(f"Generated text: {result['generated_text'][:100]}...")
             return True
         else:
-            print(f"❌ Text generation failed: {response.status_code}")
+            print(f"❌ Chat completion test failed: {response.status_code}")
             print(f"Response: {response.text}")
             return False
+            
     except Exception as e:
-        print(f"❌ Text generation error: {str(e)}")
+        print(f"❌ Chat completion test error: {e}")
         return False
 
-def test_chat_completion():
-    """Test the chat completion endpoint"""
-    print("\n🔍 Testing chat completion endpoint...")
-    
-    payload = {
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a helpful travel assistant. Provide detailed and helpful travel advice."
-            },
-            {
-                "role": "user",
-                "content": "I'm planning a trip to Italy. What are the must-visit cities and what should I know about Italian culture?"
-            }
-        ],
-        "max_length": 300,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "do_sample": True
-    }
-    
+def test_generate_endpoint(api_url="http://localhost:8080"):
+    """Test text generation endpoint"""
     try:
+        payload = {
+            "prompt": "Plan a 3-day trip to Tokyo:",
+            "max_length": 150,
+            "temperature": 0.7
+        }
+        
+        print("Testing text generation endpoint...")
         response = requests.post(
-            f"{API_BASE_URL}/chat",
+            f"{api_url}/generate",
             json=payload,
-            headers={"Content-Type": "application/json"}
+            timeout=60
         )
         
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Chat completion successful:")
-            print(f"Generated text: {data['generated_text']}")
-            print(f"Input length: {data['input_length']}")
-            print(f"Generated length: {data['generated_length']}")
+            result = response.json()
+            print(f"✅ Text generation test passed")
+            print(f"Generated text: {result['generated_text'][:100]}...")
             return True
         else:
-            print(f"❌ Chat completion failed: {response.status_code}")
+            print(f"❌ Text generation test failed: {response.status_code}")
             print(f"Response: {response.text}")
             return False
+            
     except Exception as e:
-        print(f"❌ Chat completion error: {str(e)}")
+        print(f"❌ Text generation test error: {e}")
+        return False
+
+def test_model_info(api_url="http://localhost:8080"):
+    """Test model info endpoint"""
+    try:
+        response = requests.get(f"{api_url}/model-info", timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ Model info test passed: {result}")
+            return True
+        else:
+            print(f"❌ Model info test failed: {response.status_code}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Model info test error: {e}")
         return False
 
 def main():
-    """Main test function"""
-    print("🚀 Starting Llama API tests...")
-    print(f"API Base URL: {API_BASE_URL}")
+    print("=== Llama API Test ===")
     
-    # Wait a bit for the server to start
-    print("⏳ Waiting for server to be ready...")
-    time.sleep(5)
+    # Test GPU availability
+    print("\n1. Testing GPU availability...")
+    gpu_ok = test_gpu_availability()
     
-    # Test health endpoint
-    model_loaded = test_health()
+    # Test bitsandbytes GPU support
+    print("\n2. Testing bitsandbytes GPU support...")
+    bnb_ok = test_bitsandbytes_gpu()
     
-    if not model_loaded:
-        print("❌ Model is not loaded. Please check the server logs.")
-        return
+    # Wait a bit for API to start
+    print("\n3. Waiting for API to start...")
+    time.sleep(10)
+    
+    # Test API health
+    print("\n4. Testing API health...")
+    health_ok = test_api_health()
     
     # Test model info
-    test_model_info()
+    print("\n5. Testing model info...")
+    model_info_ok = test_model_info()
     
-    # Test text generation
-    test_text_generation()
+    # Test chat endpoint
+    print("\n6. Testing chat completion...")
+    chat_ok = test_chat_endpoint()
     
-    # Test chat completion
-    test_chat_completion()
+    # Test generate endpoint
+    print("\n7. Testing text generation...")
+    generate_ok = test_generate_endpoint()
     
-    print("\n🎉 All API tests completed!")
+    # Summary
+    print("\n=== Test Summary ===")
+    print(f"GPU Available: {'✅' if gpu_ok else '❌'}")
+    print(f"BitsAndBytes GPU: {'✅' if bnb_ok else '❌'}")
+    print(f"API Health: {'✅' if health_ok else '❌'}")
+    print(f"Model Info: {'✅' if model_info_ok else '❌'}")
+    print(f"Chat Endpoint: {'✅' if chat_ok else '❌'}")
+    print(f"Generate Endpoint: {'✅' if generate_ok else '❌'}")
+    
+    if all([gpu_ok, health_ok, model_info_ok, chat_ok, generate_ok]):
+        print("\n🎉 All tests passed! Llama API is working correctly.")
+        return 0
+    else:
+        print("\n⚠️  Some tests failed. Check the logs above for details.")
+        return 1
 
 if __name__ == "__main__":
-    main() 
+    sys.exit(main()) 

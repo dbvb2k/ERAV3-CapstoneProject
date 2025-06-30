@@ -49,27 +49,29 @@ if 'location_info' not in st.session_state:
 # Initialize the MCP server and tools
 @st.cache_resource(show_spinner="Loading AI Travel Planner...")
 def initialize_mcp_server():
-    """Initialize and cache the MCP server with all tools"""
+    """Initialize the MCP server and tools."""
     try:
-        # Get API configuration
+        # Load environment variables
+        load_dotenv()
+        
+        # Get configuration from environment variables
         openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
         rapidapi_key = os.getenv('RAPID_API_KEY')
+        llama_api_url = os.getenv('LLAMA_API_URL', 'http://localhost:8080')
         site_url = os.getenv('SITE_URL', 'http://localhost:8501')
         site_name = os.getenv('SITE_NAME', 'AI Travel Planner')
         
-        if not openrouter_api_key:
-            st.error("OpenRouter API key not found. Please set OPENROUTER_API_KEY in your environment variables.")
+        # Check for at least one LLM service
+        if not openrouter_api_key and not llama_api_url:
+            st.error("No LLM service configured. Please set either OPENROUTER_API_KEY or ensure LLAMA_API_URL is accessible.")
             st.stop()
         
         if not rapidapi_key:
             st.warning("RapidAPI key not found. Flight and hotel data will be unavailable.")
         
-        # Initialize the planner tool
+        # Initialize the planner tool with fallback support
         planner_tool = ItineraryPlannerTool(
-            # openrouter_api_key=openrouter_api_key,
-            # site_url=site_url,
-            # site_name=site_name
-            api_base_url="http://localhost:8080"
+            api_base_url=llama_api_url
         )
         
         # Initialize travel utils
