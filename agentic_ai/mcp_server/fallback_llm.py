@@ -97,7 +97,7 @@ class OpenRouterLLM(LLM):
 class FallbackLLM(LLM):
     """LangChain LLM implementation with fallback from Local Llama to OpenRouter."""
     
-    llama_api_url: str = Field(default_factory=lambda: os.getenv("LLAMA_API_URL", "http://localhost:8080"))
+    llama_api_url: str = Field(default_factory=lambda: os.getenv("LLAMA_API_URL", "http://llamaapi.test2-gpu.travelaibot.local:8080"))
     openrouter_api_key: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
     max_length: int = 2000

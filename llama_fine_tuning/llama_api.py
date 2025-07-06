@@ -17,6 +17,7 @@ from transformers import (
 from peft import PeftModel, PeftConfig
 import os
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 # Load environment variables from .env file
 load_dotenv()
@@ -54,12 +55,32 @@ elif not HF_TOKEN:
 
 logger.info("Initializing Llama API service...")
 
+# Global variables for model and tokenizer
+model = None
+tokenizer = None
+generator = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI app"""
+    # Startup
+    logger.info("Starting up Llama API service...")
+    success = load_model()
+    if not success:
+        logger.error("Failed to load model during startup")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down Llama API service...")
+
 app = FastAPI(
     title="Llama Travel Model API",
     description="API for inference using fine-tuned Llama 3 8B Instruct model for travel-related tasks",
     version="1.0.0",
     docs_url=None,
-    redoc_url=None
+    redoc_url=None,
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -70,11 +91,6 @@ app.add_middleware(
     allow_methods=CORS_METHODS,
     allow_headers=CORS_HEADERS,
 )
-
-# Global variables for model and tokenizer
-model = None
-tokenizer = None
-generator = None
 
 # Pydantic models for request/response
 class ChatMessage(BaseModel):
@@ -188,10 +204,82 @@ def load_model():
             logger.info("No GPU available, using CPU mode")
             model_kwargs["device_map"] = "cpu"
         
-        base_model = AutoModelForCausalLM.from_pretrained(
-            peft_config.base_model_name_or_path,
-            **model_kwargs
-        )
+        # Fix the configuration file directly to avoid RoPE scaling issues
+        logger.info("Fixing configuration file to resolve RoPE scaling issues...")
+        
+        import json
+        import os
+        
+        # Try to find and fix the config.json file
+        config_paths = [
+            os.path.join(peft_config.base_model_name_or_path, "config.json"),
+            "model/COMPLETE_TRAVEL_MODEL/config.json"
+        ]
+        
+        config_fixed = False
+        for config_path in config_paths:
+            if os.path.exists(config_path):
+                try:
+                    logger.info(f"Found config file: {config_path}")
+                    with open(config_path, 'r') as f:
+                        config_data = json.load(f)
+                    
+                    # Fix RoPE scaling if present
+                    if 'rope_scaling' in config_data:
+                        logger.info(f"Original RoPE scaling in config: {config_data['rope_scaling']}")
+                        
+                        if isinstance(config_data['rope_scaling'], dict):
+                            if 'rope_type' in config_data['rope_scaling'] and 'factor' in config_data['rope_scaling']:
+                                # Fix the format
+                                config_data['rope_scaling'] = {
+                                    'type': config_data['rope_scaling']['rope_type'],
+                                    'factor': config_data['rope_scaling']['factor']
+                                }
+                                logger.info(f"Fixed RoPE scaling: {config_data['rope_scaling']}")
+                            elif 'type' in config_data['rope_scaling'] and 'factor' in config_data['rope_scaling']:
+                                # Already correct format, but ensure no extra fields
+                                config_data['rope_scaling'] = {
+                                    'type': config_data['rope_scaling']['type'],
+                                    'factor': config_data['rope_scaling']['factor']
+                                }
+                                logger.info(f"Cleaned RoPE scaling: {config_data['rope_scaling']}")
+                            else:
+                                # Remove problematic rope_scaling
+                                del config_data['rope_scaling']
+                                logger.info("Removed problematic rope_scaling")
+                        
+                        # Write the fixed config back
+                        with open(config_path, 'w') as f:
+                            json.dump(config_data, f, indent=2)
+                        
+                        config_fixed = True
+                        logger.info(f"Successfully fixed config file: {config_path}")
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to fix config file {config_path}: {e}")
+                    continue
+        
+        if not config_fixed:
+            logger.warning("Could not find or fix config file, will try alternative approach")
+        
+        try:
+            # Try loading without custom config first (this worked in our local test)
+            logger.info("Attempting to load model with default configuration...")
+            base_model = AutoModelForCausalLM.from_pretrained(
+                peft_config.base_model_name_or_path,
+                **model_kwargs
+            )
+        except Exception as fallback_error:
+            logger.warning(f"Failed to load with default config: {fallback_error}")
+            logger.info("Attempting to load with ignore_mismatched_sizes...")
+            
+            # Try with ignore_mismatched_sizes to bypass configuration issues
+            base_model = AutoModelForCausalLM.from_pretrained(
+                peft_config.base_model_name_or_path,
+                ignore_mismatched_sizes=True,
+                **model_kwargs
+            )
         
         # Load LoRA adapter
         logger.info("Loading LoRA adapter...")
@@ -211,6 +299,9 @@ def load_model():
         
     except Exception as e:
         logger.error(f"Error loading model: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return False
 
 def format_chat_prompt(messages: List[ChatMessage]) -> str:
@@ -229,14 +320,6 @@ def format_chat_prompt(messages: List[ChatMessage]) -> str:
     formatted_prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
     
     return formatted_prompt
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize model on startup"""
-    logger.info("Starting up Llama API service...")
-    success = load_model()
-    if not success:
-        logger.error("Failed to load model during startup")
 
 @app.get("/health")
 async def health_check():

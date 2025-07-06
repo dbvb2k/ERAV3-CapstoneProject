@@ -20,6 +20,7 @@ from PIL import Image
 load_dotenv()
 
 # Define constants
+REQUEST_TIMEOUT = 300
 AGENT_URL = os.getenv("AGENT_URL", "http://localhost:8000")  # Default to localhost if not set
 print(f"\n=== Using Agent URL: {AGENT_URL} ===")
 
@@ -157,7 +158,7 @@ with img_col1:
                     }
                     
                     # Make request to GeoCLIP API
-                    response = requests.post(GEOCLIP_API_URL, files=files, timeout=30)
+                    response = requests.post(GEOCLIP_API_URL, files=files, timeout=REQUEST_TIMEOUT)
                     
                     if response.status_code == 200:
                         predictions = response.json()
@@ -574,6 +575,7 @@ if mode == "Get Travel Suggestions":
                         # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
                         # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
                         # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        api_base_url=llama_api_url
                     )
                     suggestions = await planner.execute(destination, 7, {"focus": "best time"})
                     best_time = suggestions[0].get("best_time_to_visit", "Contact travel agent for details") if suggestions and len(suggestions) > 0 else "Contact travel agent for details"
@@ -591,7 +593,7 @@ if mode == "Get Travel Suggestions":
                         # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
                         # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
                         # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
-                        api_base_url="http://localhost:8080"
+                        api_base_url=llama_api_url
                     )
                     suggestions = await planner.execute(destination, 7, {"focus": "budget"})
                     budget = suggestions[0].get("estimated_budget", "Varies by season") if suggestions and len(suggestions) > 0 else "Varies by season"
