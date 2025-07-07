@@ -1,29 +1,36 @@
 """
-Custom OpenRouter LLM implementation for LangChain.
+Custom Local Llama API LLM implementation for LangChain.
 """
 
-from typing import Any, List, Mapping, Optional
+from typing import Any, List, Mapping, Optional, Dict
 from langchain_core.language_models.llms import LLM
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from pydantic import BaseModel, Field, ConfigDict
 import aiohttp
 import json
 
-class OpenRouterLLM(LLM):
-    """LangChain LLM implementation for OpenRouter."""
+class LocalLlamaLLM(LLM):
+    """LangChain LLM implementation for Local Llama API."""
     
-    api_key: str
-    model: str = "meta-llama/llama-3.3-8b-instruct:free"
+    api_base_url: str = "http://localhost:8080"
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
-    max_tokens: int = 2000
-    site_url: str = "http://localhost:8501"
-    site_name: str = "AI Travel Planner"
+    max_length: int = 2000
+    use_chat_endpoint: bool = True  # Use chat endpoint for better conversation handling
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
     @property
     def _llm_type(self) -> str:
-        return "openrouter"
+        return "local_llama"
+
+    def _format_chat_messages(self, prompt: str) -> List[Dict[str, str]]:
+        """Convert a single prompt to chat format for the Llama API"""
+        # If the prompt already contains chat markers, use it as is
+        if "<|start_header_id|>" in prompt:
+            return [{"role": "user", "content": prompt}]
+        
+        # Otherwise, treat it as a user message
+        return [{"role": "user", "content": prompt}]
 
     async def _acall(
         self,
@@ -32,32 +39,28 @@ class OpenRouterLLM(LLM):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
-        """Async call to OpenRouter's API."""
+        """Async call to Local Llama API."""
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.site_url,
-            "X-Title": self.site_name
+            "Content-Type": "application/json"
         }
+        
+        # Always use chat endpoint for better compatibility with Llama 3
+        messages = [{"role": "user", "content": prompt}]
         
         payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+            "messages": messages,
+            "max_length": self.max_length,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens
+            "top_p": 0.9,
+            "do_sample": True,
+            "num_return_sequences": 1
         }
         
-        if stop:
-            payload["stop"] = stop
-            
+        endpoint = f"{self.api_base_url}/chat"
+        
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                endpoint,
                 headers=headers,
                 json=payload
             ) as response:
@@ -66,10 +69,10 @@ class OpenRouterLLM(LLM):
                     raise Exception(f"API call failed with status {response.status}: {error_text}")
                 
                 result = await response.json()
-                if not result.get('choices'):
-                    raise ValueError("No response choices found in API result")
+                if not result.get('generated_text'):
+                    raise ValueError("No generated text found in API result")
                 
-                return result['choices'][0]['message']['content']
+                return result['generated_text']
 
     def _call(
         self,
@@ -78,7 +81,7 @@ class OpenRouterLLM(LLM):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
-        """Sync call to OpenRouter's API."""
+        """Sync call to Local Llama API."""
         import asyncio
         try:
             loop = asyncio.get_event_loop()
@@ -91,7 +94,8 @@ class OpenRouterLLM(LLM):
     def _identifying_params(self) -> Mapping[str, Any]:
         """Get the identifying parameters."""
         return {
-            "model": self.model,
+            "api_base_url": self.api_base_url,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens
+            "max_length": self.max_length,
+            "use_chat_endpoint": self.use_chat_endpoint
         } 

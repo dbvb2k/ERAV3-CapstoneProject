@@ -13,11 +13,14 @@ import httpx
 import json
 import logging
 import traceback
+import requests
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
 
 # Define constants
+REQUEST_TIMEOUT = 300
 AGENT_URL = os.getenv("AGENT_URL", "http://localhost:8000")  # Default to localhost if not set
 print(f"\n=== Using Agent URL: {AGENT_URL} ===")
 
@@ -38,30 +41,38 @@ if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 if 'current_mode' not in st.session_state:
     st.session_state.current_mode = "Get Travel Suggestions"
+# Initialize session state for image upload and location
+if 'uploaded_image' not in st.session_state:
+    st.session_state.uploaded_image = None
+if 'location_info' not in st.session_state:
+    st.session_state.location_info = None
 
 # Initialize the MCP server and tools
 @st.cache_resource(show_spinner="Loading AI Travel Planner...")
 def initialize_mcp_server():
-    """Initialize and cache the MCP server with all tools"""
+    """Initialize the MCP server and tools."""
     try:
-        # Get API configuration
+        # Load environment variables
+        load_dotenv()
+        
+        # Get configuration from environment variables
         openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
         rapidapi_key = os.getenv('RAPID_API_KEY')
+        llama_api_url = os.getenv('LLAMA_API_URL', 'http://localhost:8080')
         site_url = os.getenv('SITE_URL', 'http://localhost:8501')
         site_name = os.getenv('SITE_NAME', 'AI Travel Planner')
         
-        if not openrouter_api_key:
-            st.error("OpenRouter API key not found. Please set OPENROUTER_API_KEY in your environment variables.")
+        # Check for at least one LLM service
+        if not openrouter_api_key and not llama_api_url:
+            st.error("No LLM service configured. Please set either OPENROUTER_API_KEY or ensure LLAMA_API_URL is accessible.")
             st.stop()
         
         if not rapidapi_key:
             st.warning("RapidAPI key not found. Flight and hotel data will be unavailable.")
         
-        # Initialize the planner tool
+        # Initialize the planner tool with fallback support
         planner_tool = ItineraryPlannerTool(
-            openrouter_api_key=openrouter_api_key,
-            site_url=site_url,
-            site_name=site_name
+            api_base_url=llama_api_url
         )
         
         # Initialize travel utils
@@ -101,6 +112,8 @@ with col1:
     if st.button("🔄 New Conversation"):
         st.session_state.conversation_session_id = None
         st.session_state.conversation_history = []
+        st.session_state.uploaded_image = None
+        st.session_state.location_info = None
         st.rerun()
 with col2:
     if st.button("🗑️ Clear History"):
@@ -109,6 +122,124 @@ with col2:
 with col3:
     if st.session_state.conversation_session_id:
         st.info(f"Session: {st.session_state.conversation_session_id[:8]}...")
+
+# Add image upload section
+st.markdown("---")
+st.subheader("📸 Upload Location Image (Optional)")
+
+# Define GeoCLIP API URL
+GEOCLIP_API_URL = os.getenv('GEOCLIP_API_URL', 'http://localhost:8090/predict')
+
+# Create two columns for image upload and display
+img_col1, img_col2 = st.columns([1, 1])
+
+with img_col1:
+    uploaded_file = st.file_uploader(
+        "Choose an image to identify location", 
+        type=["jpg", "jpeg", "png"],
+        help="Upload an image of a location to automatically identify the destination"
+    )
+    
+    if uploaded_file:
+        # Store the uploaded image
+        st.session_state.uploaded_image = uploaded_file
+        
+        # Process the image with GeoCLIP API
+        if st.button("🔍 Identify Location"):
+            try:
+                with st.spinner("Identifying location from image..."):
+                    # Prepare the file for API request
+                    files = {
+                        "file": (
+                            uploaded_file.name,
+                            uploaded_file.getvalue(),
+                            uploaded_file.type or "image/jpeg"
+                        )
+                    }
+                    
+                    # Make request to GeoCLIP API
+                    response = requests.post(GEOCLIP_API_URL, files=files, timeout=REQUEST_TIMEOUT)
+                    
+                    if response.status_code == 200:
+                        predictions = response.json()
+                        if predictions and len(predictions) > 0:
+                            st.session_state.location_info = predictions[0]
+                            st.success(f"✅ Location identified: {st.session_state.location_info['location_name']}")
+                            
+                            # Display location details
+                            with st.expander("📍 Location Details"):
+                                st.write(f"**Location:** {st.session_state.location_info['location_name']}")
+                                st.write(f"**Coordinates:** {st.session_state.location_info['latitude']}, {st.session_state.location_info['longitude']}")
+                                if 'confidence' in st.session_state.location_info:
+                                    st.write(f"**Confidence:** {st.session_state.location_info['confidence']:.2f}")
+                        else:
+                            st.warning("⚠️ No location found in the image. Please try a different image.")
+                    else:
+                        st.error(f"❌ Error from GeoCLIP API: {response.text}")
+                        
+            except requests.exceptions.ConnectionError:
+                st.error("❌ Cannot connect to GeoCLIP API. Please ensure the service is running.")
+            except Exception as e:
+                st.error(f"❌ Error processing image: {str(e)}")
+
+with img_col2:
+    # Display uploaded image and location info
+    if st.session_state.uploaded_image:
+        st.write("**Uploaded Image:**")
+        image = Image.open(st.session_state.uploaded_image).convert("RGB")
+        
+        # Resize image to fit 300x300 container while maintaining aspect ratio
+        def resize_image_with_aspect_ratio(img, target_size=(300, 200)):
+            """Resize image to fit target size while maintaining aspect ratio"""
+            # Get original dimensions
+            original_width, original_height = img.size
+            
+            # Calculate aspect ratios
+            target_aspect = target_size[0] / target_size[1]
+            original_aspect = original_width / original_height
+            
+            if original_aspect > target_aspect:
+                # Image is wider than target, fit to width
+                new_width = target_size[0]
+                new_height = int(target_size[0] / original_aspect)
+            else:
+                # Image is taller than target, fit to height
+                new_height = target_size[1]
+                new_width = int(target_size[1] * original_aspect)
+            
+            # Resize image
+            resized_image = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Create a new image with target size and white background
+            final_image = Image.new('RGB', target_size, (255, 255, 255))
+            
+            # Calculate position to center the resized image
+            x_offset = (target_size[0] - new_width) // 2
+            y_offset = (target_size[1] - new_height) // 2
+            
+            # Paste the resized image onto the background
+            final_image.paste(resized_image, (x_offset, y_offset))
+            
+            return final_image
+        
+        # Resize the image
+        display_image = resize_image_with_aspect_ratio(image, (300, 200))
+        
+        # Display the image in a container
+        st.image(display_image, caption="Uploaded Image", use_container_width=False, width=300)
+        
+        if st.session_state.location_info:
+            st.write("**Identified Location:**")
+            st.info(f"📍 {st.session_state.location_info['location_name']}")
+            
+            # Add a button to use this location
+            if st.button("🎯 Use This Location"):
+                st.success(f"Location '{st.session_state.location_info['location_name']}' will be used in your travel planning!")
+        else:
+            st.write("**Status:** No location identified yet")
+    else:
+        st.write("**No image uploaded**")
+        st.info("Upload an image to automatically identify the location for your travel planning.")
 
 # Add export functionality
 if st.session_state.conversation_history:
@@ -294,6 +425,22 @@ if mode == "Get Travel Suggestions":
                 "mode": "suggestions"
             }
             
+            # Add location information if available from uploaded image
+            if st.session_state.location_info:
+                context["location_information"] = {
+                    "location_name": st.session_state.location_info['location_name'],
+                    "latitude": st.session_state.location_info['latitude'],
+                    "longitude": st.session_state.location_info['longitude'],
+                    "confidence": st.session_state.location_info.get('confidence', 0.0)
+                }
+                # Pre-populate the travel input with the identified location
+                if not travel_input or travel_input.strip() == "I want to travel for about a week, interested in cultural experiences and good food.":
+                    travel_input = f"I want to travel to {st.session_state.location_info['location_name']} for about a week, interested in cultural experiences and good food."
+                else:
+                    # If user has already entered something, enhance it with location info
+                    if st.session_state.location_info['location_name'].lower() not in travel_input.lower():
+                        travel_input = f"I want to travel to {st.session_state.location_info['location_name']}. {travel_input}"
+            
             # Define async function to make the request
             async def get_suggestions():
                 """Get travel suggestions from the agent."""
@@ -313,15 +460,21 @@ if mode == "Get Travel Suggestions":
                             "conversation_history": st.session_state.conversation_history
                         }
                         
+                        print(f"\n=== Sending request to agent ===")
+                        print(f"Query: {travel_input}")
+                        print(f"Context keys: {list(context.keys())}")
+                        
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=30.0
+                            timeout=60.0  # Increased timeout to 60 seconds
                         )
                         print(f"\n=== Agent response received: {response.status_code} ===")
                         
                         if response.status_code == 200:
                             result = response.json()
+                            print(f"\n=== Full result: {result} ===")
+                            
                             if isinstance(result, dict) and "result" in result:
                                 suggestions = result["result"].get("output", "")
                                 print(f"\n=== Raw suggestions from agent: ===\n{suggestions}")
@@ -339,10 +492,24 @@ if mode == "Get Travel Suggestions":
                                 else:
                                     # This is a suggestions response
                                     return {"type": "suggestions", "content": suggestions}
-                            return {"type": "error", "content": "No result found"}
+                            else:
+                                print(f"\n=== Unexpected result structure: {result} ===")
+                                return {"type": "error", "content": "Unexpected response structure"}
                         else:
-                            st.error(f"Error from agent: {response.text}")
-                            return {"type": "error", "content": response.text}
+                            error_text = response.text
+                            print(f"\n=== Agent error: {response.status_code} - {error_text} ===")
+                            st.error(f"Error from agent: {error_text}")
+                            return {"type": "error", "content": error_text}
+                except httpx.TimeoutException:
+                    error_msg = "Request timed out. The server is taking too long to respond. Please try again."
+                    print(f"\n=== Timeout error: {error_msg} ===")
+                    st.error(error_msg)
+                    return {"type": "error", "content": error_msg}
+                except httpx.ConnectError:
+                    error_msg = "Cannot connect to the travel agent server. Please ensure the MCP server is running."
+                    print(f"\n=== Connection error: {error_msg} ===")
+                    st.error(error_msg)
+                    return {"type": "error", "content": error_msg}
                 except Exception as e:
                     print(f"\n=== Error in get_suggestions: {str(e)} ===")
                     print(f"Error details: {traceback.format_exc()}")
@@ -405,9 +572,10 @@ if mode == "Get Travel Suggestions":
                 try:
                     print(f"\n=== Getting best time to visit for {destination} ===")
                     planner = ItineraryPlannerTool(
-                        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
-                        site_url=os.getenv("SITE_URL", "http://localhost:8501"),
-                        site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+                        # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
+                        # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        api_base_url=llama_api_url
                     )
                     suggestions = await planner.execute(destination, 7, {"focus": "best time"})
                     best_time = suggestions[0].get("best_time_to_visit", "Contact travel agent for details") if suggestions and len(suggestions) > 0 else "Contact travel agent for details"
@@ -422,9 +590,10 @@ if mode == "Get Travel Suggestions":
                 try:
                     print(f"\n=== Getting estimated budget for {destination} ===")
                     planner = ItineraryPlannerTool(
-                        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
-                        site_url=os.getenv("SITE_URL", "http://localhost:8501"),
-                        site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+                        # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
+                        # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+                        api_base_url=llama_api_url
                     )
                     suggestions = await planner.execute(destination, 7, {"focus": "budget"})
                     budget = suggestions[0].get("estimated_budget", "Varies by season") if suggestions and len(suggestions) > 0 else "Varies by season"
@@ -451,27 +620,65 @@ if mode == "Get Travel Suggestions":
                 # Parse and display suggestions
                 suggestions = result["content"]
                 
+                # First, try to display the raw response to see what we're working with
+                st.subheader("Travel Suggestions")
+                st.markdown("**Raw Response:**")
+                st.markdown(suggestions)
+                
                 # Convert the suggestions into a structured format
                 async def process_suggestions(suggestions_text):
                     """Process suggestions and add additional information"""
                     suggestions_list = []
                     if isinstance(suggestions_text, str):
-                        # Parse the text response into structured suggestions
+                        # Try multiple parsing strategies
                         import re
-                        # Look for bullet points or numbered items
+                        
+                        # Strategy 1: Look for bullet points or numbered items
                         suggestion_items = re.split(r'\n\s*[\*\•\-]\s*|\n\d+\.\s+', suggestions_text)
                         suggestion_items = [s.strip() for s in suggestion_items if s.strip()]
                         
-                        for item in suggestion_items[:2]:  # Limit to 2 suggestions
+                        # Strategy 2: If no bullet points found, look for location names
+                        if not suggestion_items or len(suggestion_items) < 2:
+                            # Look for common location patterns
+                            location_patterns = [
+                                r'([A-Z][a-z]+(?:[,\s]+[A-Z][a-z]+)*)',
+                                r'([A-Z][a-z]+(?:[,\s]+[A-Z][a-z]+)*\s+for\s+.+)',
+                                r'Location:\s*([A-Z][a-z]+(?:[,\s]+[A-Z][a-z]+)*)'
+                            ]
+                            
+                            for pattern in location_patterns:
+                                matches = re.findall(pattern, suggestions_text)
+                                if matches:
+                                    suggestion_items = matches[:2]  # Take first 2 matches
+                                    break
+                        
+                        # Strategy 3: If still no items, create a single suggestion from the text
+                        if not suggestion_items:
+                            # Extract location from context if available
+                            location_name = "Unknown Location"
+                            if st.session_state.location_info:
+                                location_name = st.session_state.location_info['location_name']
+                            
+                            suggestion_items = [location_name]
+                        
+                        print(f"\n=== Found {len(suggestion_items)} suggestion items ===")
+                        
+                        for i, item in enumerate(suggestion_items[:2]):  # Limit to 2 suggestions
                             if item:
+                                # Clean up the destination name
                                 destination = item.split(" for ")[0] if " for " in item else item
-                                description = item.split(" for ")[1] if " for " in item else ""
+                                description = item.split(" for ")[1] if " for " in item else f"Great destination for travel experiences"
                                 
-                                print(f"\n=== Processing suggestion for {destination} ===")
+                                # Remove common prefixes and clean up
+                                destination = re.sub(r'^[\*\•\-]\s*', '', destination)
+                                destination = re.sub(r'^\d+\.\s*', '', destination)
+                                destination = destination.strip()
+                                
+                                print(f"\n=== Processing suggestion {i+1} for {destination} ===")
                                 
                                 # Create suggestion with additional information
                                 suggestion = {
-                                    "destination": destination.replace('*', '').strip(),
+                                    "destination": destination,
                                     "description": description,
                                     "best_time_to_visit": await get_best_time(destination),
                                     "estimated_budget": await get_estimated_budget(destination),
@@ -489,9 +696,10 @@ if mode == "Get Travel Suggestions":
                 # Process suggestions
                 suggestions_list = asyncio.run(process_suggestions(suggestions))
                 
-                # Display suggestions
+                # Display structured suggestions if available
                 if suggestions_list:
-                    st.subheader("Travel Suggestions")
+                    st.markdown("---")
+                    st.subheader("Structured Travel Information")
                     for i, suggestion in enumerate(suggestions_list, 1):
                         print(f"\n=== Displaying suggestion {i} ===")
                         print(f"Type: {type(suggestion)}")
@@ -566,8 +774,7 @@ if mode == "Get Travel Suggestions":
                             st.error(f"Error displaying suggestion {i}: {str(e)}")
                             print(f"Error details: {traceback.format_exc()}")
                 else:
-                    st.warning("No structured suggestions found. Here's the raw response:")
-                    st.markdown(suggestions)
+                    st.warning("Could not parse structured suggestions from the response.")
                     
             elif result["type"] == "error":
                 st.error(f"An error occurred: {result['content']}")
@@ -580,7 +787,9 @@ else:  # Create Detailed Itinerary
     col1, col2 = st.columns(2)
     
     with col1:
-        destination = st.text_input("Destination", "Paris, France")
+        # Pre-populate destination if location info is available
+        default_destination = st.session_state.location_info['location_name'] if st.session_state.location_info else "Paris, France"
+        destination = st.text_input("Destination", default_destination)
         start_date = st.date_input(
             "Start Date",
             datetime.now() + timedelta(days=30)
@@ -611,11 +820,27 @@ else:  # Create Detailed Itinerary
                     "mode": "itinerary"
                 }
                 
+                # Add location information if available from uploaded image
+                if st.session_state.location_info:
+                    context["location_information"] = {
+                        "location_name": st.session_state.location_info['location_name'],
+                        "latitude": st.session_state.location_info['latitude'],
+                        "longitude": st.session_state.location_info['longitude'],
+                        "confidence": st.session_state.location_info.get('confidence', 0.0)
+                    }
+                
                 # Use MCP server's agent to create itinerary
                 async def create_itinerary():
                     async with httpx.AsyncClient() as client:
+                        # Create the query with location information if available
+                        query = f"Create a detailed itinerary for a trip from {origin} to {destination}"
+                        
+                        # Enhance query with location information if available
+                        if st.session_state.location_info:
+                            query += f" (Location identified from image: {st.session_state.location_info['location_name']} at coordinates {st.session_state.location_info['latitude']}, {st.session_state.location_info['longitude']})"
+                        
                         request_data = {
-                            "query": f"Create a detailed itinerary for a trip from {origin} to {destination}",
+                            "query": query,
                             "context": context,
                             "session_id": st.session_state.conversation_session_id,
                             "conversation_history": st.session_state.conversation_history
@@ -623,7 +848,7 @@ else:  # Create Detailed Itinerary
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=30.0
+                            timeout=60.0  # Increased timeout to 60 seconds
                         )
                         return response.json()
                 
@@ -660,7 +885,7 @@ if st.session_state.conversation_history:
         st.write("**Recent conversation summary:**")
         recent_messages = st.session_state.conversation_history[-4:]  # Show last 4 messages
         for msg in recent_messages:
-            role_icon = "��" if msg["role"] == "user" else "🤖"
+            role_icon = "👤" if msg["role"] == "user" else "🤖"
             st.write(f"{role_icon} **{msg['role'].title()}:** {msg['content'][:100]}{'...' if len(msg['content']) > 100 else ''}")
 
 # Example follow-up questions
@@ -696,6 +921,15 @@ if st.button("Send Follow-up", key="send_follow_up"):
                     "mode": "follow_up"
                 }
                 
+                # Add location information if available from uploaded image
+                if st.session_state.location_info:
+                    context["location_information"] = {
+                        "location_name": st.session_state.location_info['location_name'],
+                        "latitude": st.session_state.location_info['latitude'],
+                        "longitude": st.session_state.location_info['longitude'],
+                        "confidence": st.session_state.location_info.get('confidence', 0.0)
+                    }
+                
                 # Prepare request with conversation state
                 request_data = {
                     "query": follow_up_question,
@@ -707,12 +941,19 @@ if st.button("Send Follow-up", key="send_follow_up"):
                 # Send follow-up question
                 async def send_follow_up():
                     async with httpx.AsyncClient() as client:
-                        response = await client.post(
-                            f"{AGENT_URL}/agent/execute",
-                            json=request_data,
-                            timeout=30.0
-                        )
-                        return response.json()
+                        try:
+                            response = await client.post(
+                                f"{AGENT_URL}/agent/execute",
+                                json=request_data,
+                                timeout=60.0  # Increased timeout to 60 seconds
+                            )
+                            return response.json()
+                        except httpx.TimeoutException:
+                            return {"status": "error", "error": "Request timed out. Please try again."}
+                        except httpx.ConnectError:
+                            return {"status": "error", "error": "Cannot connect to the travel agent server."}
+                        except Exception as e:
+                            return {"status": "error", "error": f"An error occurred: {str(e)}"}
                 
                 result = asyncio.run(send_follow_up())
                 

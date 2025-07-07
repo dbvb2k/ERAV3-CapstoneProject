@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # API Settings
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    API_PORT: int = 8090
     API_TITLE: str = "Place Identifier API"
     API_VERSION: str = "1.0.0"
     

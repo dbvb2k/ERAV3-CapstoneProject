@@ -12,7 +12,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMes
 from langchain.tools.render import format_tool_to_openai_function
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.memory import ConversationBufferWindowMemory
-from .openrouter_llm import OpenRouterLLM
+from .fallback_llm import FallbackLLM
 import uvicorn
 import os
 import asyncio
@@ -157,7 +157,7 @@ class MCPServer:
                 # Create input with conversation context
                 agent_input = {
                     "input": request_dict["query"],
-                    "context": session.context,
+                    "context": self._format_context_for_prompt(session.context),
                     "chat_history": chat_history
                 }
                 
@@ -207,31 +207,75 @@ class MCPServer:
         """Register a new tool with the MCP server."""
         self.tools[tool_name] = tool
 
+    def _format_context_for_prompt(self, context):
+        """Format context information for the prompt template"""
+        if not context:
+            return "No additional context provided."
+        
+        formatted_context = ""
+        
+        # Handle location information specifically
+        if "location_information" in context:
+            loc_info = context["location_information"]
+            formatted_context += f"LOCATION FROM IMAGE: {loc_info.get('location_name', 'Unknown')}\n"
+            formatted_context += f"Coordinates: {loc_info.get('latitude', 'N/A')}, {loc_info.get('longitude', 'N/A')}\n"
+            if 'confidence' in loc_info:
+                formatted_context += f"Confidence: {loc_info['confidence']:.2f}\n"
+            formatted_context += "\n"
+        
+        # Handle preferences
+        if "preferences" in context:
+            prefs = context["preferences"]
+            formatted_context += "USER PREFERENCES:\n"
+            for key, value in prefs.items():
+                if value:  # Only include non-empty values
+                    formatted_context += f"- {key}: {value}\n"
+            formatted_context += "\n"
+        
+        # Handle travel request
+        if "travel_request" in context:
+            travel_req = context["travel_request"]
+            formatted_context += "TRAVEL REQUEST:\n"
+            formatted_context += f"- Origin: {travel_req.get('origin', 'N/A')}\n"
+            formatted_context += f"- Destination: {travel_req.get('destination', 'N/A')}\n"
+            formatted_context += f"- Duration: {travel_req.get('start_date', 'N/A')} to {travel_req.get('end_date', 'N/A')}\n"
+            formatted_context += f"- Travelers: {travel_req.get('num_travelers', 'N/A')}\n"
+            formatted_context += "\n"
+        
+        # Handle mode
+        if "mode" in context:
+            formatted_context += f"MODE: {context['mode']}\n\n"
+        
+        # Add any other context
+        for key, value in context.items():
+            if key not in ["location_information", "preferences", "travel_request", "mode"]:
+                formatted_context += f"{key}: {value}\n"
+        
+        return formatted_context.strip()
+
     def setup_agent(self, tools):
-        """Set up the LangChain agent with OpenRouter LLM."""
-        # Initialize OpenRouter LLM
-        openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
-        if not openrouter_api_key:
-            raise ValueError("OPENROUTER_API_KEY environment variable not set")
-            
-        llm = OpenRouterLLM(
-            api_key=openrouter_api_key,
-            model="meta-llama/llama-3.3-8b-instruct:free",
-            # model="mistralai/mistral-7b-instruct",  # Using a smaller, cheaper model
+        """Set up the LangChain agent with Fallback LLM (Local Llama + OpenRouter)."""
+        # Initialize Fallback LLM
+        llm = FallbackLLM(
             temperature=0.7,
-            max_tokens=2000,
-            site_url=os.getenv('SITE_URL', 'http://localhost:8501'),
-            site_name=os.getenv('SITE_NAME', 'AI Travel Planner')
+            max_length=2000
         )
         
         # Create the prompt template
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content="""You are a helpful AI travel assistant that helps plan trips and create itineraries.
 
+CONTEXT INFORMATION:
+If location information is provided from an uploaded image, use it as the primary destination for suggestions and itineraries. The location information includes:
+- location_name: The identified location from the image
+- latitude/longitude: Geographic coordinates
+- confidence: Confidence score of the identification
+
 RESPONSE FORMATS:
 
 1. For DESTINATION SUGGESTIONS (when user asks for general travel ideas):
-   Return EXACTLY 2 suggestions in this format:
+   If location information is available, focus on that specific location and provide detailed information about it.
+   Otherwise, return EXACTLY 2 suggestions in this format:
    * [Destination Name] for [brief description of culture and food highlights]
    
    Example:
@@ -265,9 +309,10 @@ IMPORTANT:
 - For suggestions, focus on destination highlights and unique experiences
 - For follow-ups, maintain context from previous messages
 - Keep responses focused and structured
-- Do not engage in open-ended conversation"""),
+- Do not engage in open-ended conversation
+- If location information is provided, prioritize that location in your responses"""),
             MessagesPlaceholder(variable_name="chat_history"),
-            HumanMessagePromptTemplate.from_template("{input}"),
+            HumanMessagePromptTemplate.from_template("Context: {context}\n\nUser Query: {input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
 
@@ -281,7 +326,8 @@ IMPORTANT:
         # Create the agent executor with memory
         self.agent_executor = AgentExecutor.from_agent_and_tools(
             agent=agent,
-            tools=tools,            verbose=True,
+            tools=tools,
+            verbose=True,
             handle_parsing_errors=True,
             max_iterations=3
         )
