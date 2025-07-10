@@ -39,6 +39,7 @@ API_PORT = int(os.getenv("API_PORT", "8080"))
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 CORS_METHODS = os.getenv("CORS_METHODS", "*").split(",")
 CORS_HEADERS = os.getenv("CORS_HEADERS", "*").split(",")
+API_MODE = os.getenv("API_MODE", "local").lower() # 'local' for 4-bit, 'production' for 16-bit
 
 # Check if we're running in a container or local environment
 IS_CONTAINER = os.getenv("IS_CONTAINER", "false").lower() == "true"
@@ -120,6 +121,47 @@ class GenerationResponse(BaseModel):
     model_name: str
     timestamp: str
 
+
+def get_model_precision_and_kwargs(gpu_available, bnb_gpu_support):
+    """Determines model loading kwargs based on API_MODE and hardware support."""
+    model_kwargs = {
+        "trust_remote_code": True
+    }
+
+    if API_MODE == "production":
+        logger.info("Production mode enabled: loading model in 16-bit precision.")
+        if gpu_available:
+            model_kwargs["torch_dtype"] = torch.bfloat16
+            model_kwargs["device_map"] = "auto"
+        else:
+            logger.warning("Production mode selected, but no GPU available. Falling back to CPU.")
+            model_kwargs["device_map"] = "cpu"
+    
+    # Default to local mode (4-bit quantization)
+    else:
+        logger.info("Local mode enabled: attempting to load model with 4-bit quantization.")
+        if gpu_available and bnb_gpu_support:
+            logger.info("Using 4-bit quantization with GPU support")
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16
+            )
+            model_kwargs["quantization_config"] = bnb_config
+            model_kwargs["device_map"] = "auto"
+            model_kwargs["torch_dtype"] = torch.bfloat16 # Still specify for compute
+        elif gpu_available:
+            logger.warning("4-bit not supported, falling back to 16-bit precision on GPU.")
+            model_kwargs["torch_dtype"] = torch.bfloat16
+            model_kwargs["device_map"] = "auto"
+        else:
+            logger.info("No GPU available, using CPU mode.")
+            model_kwargs["device_map"] = "cpu"
+            
+    return model_kwargs
+
+
 def check_gpu_support():
     """Check if GPU and bitsandbytes GPU support are available"""
     gpu_available = torch.cuda.is_available()
@@ -177,32 +219,11 @@ def load_model():
         
         # Load base model with appropriate configuration
         logger.info("Loading base model...")
-        model_kwargs = {
-            "trust_remote_code": True,
-            "torch_dtype": torch.bfloat16
-        }
+        model_kwargs = get_model_precision_and_kwargs(gpu_available, bnb_gpu_support)
         
         # Add token only if provided
         if HF_TOKEN:
             model_kwargs["token"] = HF_TOKEN
-        
-        # Configure quantization based on available support
-        if gpu_available and bnb_gpu_support:
-            logger.info("Using 4-bit quantization with GPU support")
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16
-            )
-            model_kwargs["quantization_config"] = bnb_config
-            model_kwargs["device_map"] = "auto"
-        elif gpu_available:
-            logger.info("GPU available but no bitsandbytes GPU support, using 16-bit precision")
-            model_kwargs["device_map"] = "auto"
-        else:
-            logger.info("No GPU available, using CPU mode")
-            model_kwargs["device_map"] = "cpu"
         
         # Fix the configuration file directly to avoid RoPE scaling issues
         logger.info("Fixing configuration file to resolve RoPE scaling issues...")
@@ -265,7 +286,7 @@ def load_model():
         
         try:
             # Try loading without custom config first (this worked in our local test)
-            logger.info("Attempting to load model with default configuration...")
+            logger.info("Attempting to load model with determined configuration...")
             base_model = AutoModelForCausalLM.from_pretrained(
                 peft_config.base_model_name_or_path,
                 **model_kwargs
@@ -457,12 +478,24 @@ async def get_model_info():
             detail="Model not loaded"
         )
     
+    precision = "Unknown"
+    if API_MODE == 'production':
+        precision = "16-bit (bfloat16)"
+    else:
+        # In local mode, check if quantization was actually applied
+        if hasattr(model, 'quantization_method') and model.quantization_method == 'bitsandbytes':
+            precision = "4-bit (quantized)"
+        else:
+            precision = "16-bit (fallback)"
+
+
     return {
         "model_name": "llama-3-8b-instruct-travel",
         "base_model": "meta-llama/Meta-Llama-3-8B-Instruct",
         "adapter_type": "LoRA",
         "parameters": "8B",
-        "quantization": "4-bit",
+        "precision": precision,
+        "api_mode": API_MODE,
         "device": str(next(model.parameters()).device),
         "loaded_at": datetime.utcnow().isoformat()
     }
