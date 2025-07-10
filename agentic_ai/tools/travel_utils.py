@@ -88,7 +88,7 @@ logger = LogManager()
 class TravelUtils:
     """Utility functions for travel-related operations"""
     
-    def __init__(self, rapidapi_key: str = None):
+    def __init__(self, rapidapi_key: str=''):
         """Initialize TravelUtils with optional RapidAPI key."""
         self.rapidapi_key = rapidapi_key
     

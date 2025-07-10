@@ -54,6 +54,7 @@ def initialize_mcp_server():
     try:
         # Load environment variables
         load_dotenv()
+        global llama_api_url, site_url, site_name
         
         # Get configuration from environment variables
         openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
@@ -467,7 +468,7 @@ if mode == "Get Travel Suggestions":
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=60.0  # Increased timeout to 60 seconds
+                            timeout=300.0  # Increased timeout to 60 seconds
                         )
                         print(f"\n=== Agent response received: {response.status_code} ===")
                         
@@ -571,6 +572,7 @@ if mode == "Get Travel Suggestions":
                 """Get best time to visit using ItineraryPlanner"""
                 try:
                     print(f"\n=== Getting best time to visit for {destination} ===")
+                    print("\nllama API URL:", llama_api_url)
                     planner = ItineraryPlannerTool(
                         # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
                         # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
