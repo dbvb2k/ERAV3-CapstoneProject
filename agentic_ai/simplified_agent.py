@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from typing import Dict, List, Any, Optional
@@ -179,6 +180,12 @@ class SimplifiedAgent:
                 continue
         
         return dates if dates else None
+
+    async def _maybe_await(self, obj):
+        """Helper to await an object if it's a coroutine, otherwise return it as is."""
+        if asyncio.iscoroutine(obj):
+            return await obj
+        return obj
         
     def setup_agent(self):
         """Set up the agent with tools using FallbackLLM."""
@@ -292,11 +299,20 @@ class SimplifiedAgent:
                         action, output = step
                         print(f"Step {i+1}: Tool {action.tool} called with inputs {action.tool_input}")
                         print(f"Output: {output}")
+                        
+                        actual_output = output
+                        try:
+                            actual_output = await self._maybe_await(output)
+                            print(f"Awaited output: {actual_output}")
+                        except Exception as e:
+                            actual_output = {"error": f"Error executing tool: {str(e)}"}
+                            print(f"Error awaiting coroutine: {str(e)}")
+                        
                         tool_calls.append({
-                                "tool": action.tool,
-                                "input": action.tool_input,
-                                "output": output
-                            })
+                            "tool": action.tool,
+                            "input": action.tool_input,
+                            "output": actual_output
+                        })
                 print("======================")                            
                 
                 # Add assistant response to conversation history
@@ -306,7 +322,7 @@ class SimplifiedAgent:
                 return {
                     "status": "success", 
                     "result": result,
-                    "tool_calls": tool_calls,  # Include tool call information
+                    "tool_calls": tool_calls,  # Now contains awaited results
                     "session_id": session_id,
                     "conversation_history": session.get_messages()
                 }
