@@ -110,6 +110,44 @@ class MCPServer:
         ]
         for session_id in expired_sessions:
             del self.conversation_sessions[session_id]
+    
+    def _preprocess_query_for_tool_use(self, query):
+        """Add hints to queries that should trigger tool use."""
+        import re
+        travel_keywords = ["flight", "hotel", "book", "price", "cost", "itinerary", "weather"]
+        date_patterns = [r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', r'January|February|March|April|May|June|July|August|September|October|November|December']
+        
+        # Check if this is a travel query that should use tools
+        should_use_tools = any(keyword in query.lower() for keyword in travel_keywords) or \
+                        any(re.search(pattern, query, re.IGNORECASE) for pattern in date_patterns)
+        
+        if should_use_tools:
+            # Add tool usage hint
+            enhanced_query = f"[IMPORTANT: Use appropriate tools to get REAL flight and hotel data] {query}"
+            return enhanced_query
+        
+        return query
+    
+    
+    def _extract_travel_dates(self, query):
+        """Extract travel dates from query text."""
+        import re
+        from datetime import datetime
+        
+        # Look for date patterns
+        date_pattern = r'(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})'
+        matches = re.findall(date_pattern, query, re.IGNORECASE)
+        
+        dates = []
+        for day, month, year in matches:
+            try:
+                date_obj = datetime.strptime(f"{day} {month} {year}", "%d %B %Y")
+                dates.append(date_obj)
+            except ValueError:
+                continue
+        
+        return dates if dates else None
+        
         
     def setup_routes(self):
         @self.app.post("/invoke_tool")
@@ -140,6 +178,9 @@ class MCPServer:
                 session_id = request.session_id or str(uuid.uuid4())
                 session = self.get_or_create_session(session_id)
                 
+                # Add tool-use hint to the query
+                enhanced_query = self._preprocess_query_for_tool_use(request.query)
+                
                 # Add user message to conversation history
                 session.add_message("user", request.query)
                 
@@ -151,17 +192,34 @@ class MCPServer:
                 memory_variables = session.memory.load_memory_variables({})
                 chat_history = memory_variables.get("chat_history", [])
                 
-                # Convert request to dict with proper serialization
-                request_dict = request.model_dump()
                 
                 # Create input with conversation context
                 agent_input = {
-                    "input": request_dict["query"],
+                    "input": enhanced_query,
                     "context": self._format_context_for_prompt(session.context),
                     "chat_history": chat_history
                 }
                 
-                result = await self.agent_executor.ainvoke(agent_input)
+                travel_dates = self._extract_travel_dates(request.query)
+                if travel_dates and "context" in agent_input:
+                    agent_input["travel_dates"] = [d.strftime("%Y-%m-%d") for d in travel_dates]
+                    if isinstance(agent_input["context"], str):
+                        agent_input["context"] += f"\nTravel dates: {', '.join(agent_input['travel_dates'])}"
+                
+                print(agent_input)
+                
+                result = await self.agent_executor.ainvoke(agent_input)        
+                # Extract tool usage information
+                tool_calls = []
+                if "intermediate_steps" in result:
+                    for step in result["intermediate_steps"]:
+                        if len(step) >= 2:
+                            action, action_output = step
+                            tool_calls.append({
+                                "tool": action.tool,
+                                "input": action.tool_input,
+                                "output": action_output
+                            })
                 
                 # Add assistant response to conversation history
                 if "output" in result:
@@ -170,6 +228,7 @@ class MCPServer:
                 return {
                     "status": "success", 
                     "result": result,
+                    "tool_calls": tool_calls,  # Include tool call information
                     "session_id": session_id,
                     "conversation_history": session.get_messages()
                 }
@@ -257,60 +316,85 @@ class MCPServer:
         """Set up the LangChain agent with Fallback LLM (Local Llama + OpenRouter)."""
         # Initialize Fallback LLM
         llm = FallbackLLM(
-            temperature=0.7,
-            max_length=2000
+            temperature=0.2,
+            max_length=2000,
+            debug = True
         )
         
         # Create the prompt template
         prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content="""You are a helpful AI travel assistant that helps plan trips and create itineraries.
+            SystemMessage(content="""You are a travel planning assistant with access to real-time tools.
 
-CONTEXT INFORMATION:
-If location information is provided from an uploaded image, use it as the primary destination for suggestions and itineraries. The location information includes:
-- location_name: The identified location from the image
-- latitude/longitude: Geographic coordinates
-- confidence: Confidence score of the identification
+            MANDATORY TOOL USAGE INSTRUCTIONS:
+            1. For ANY travel planning request, you MUST use tools to get real information.
+            2. NEVER fabricate flight or hotel details - ONLY use the data from tools.
+            3. You MUST call FlightSearchTool when asked about travel between locations.
+            4. You MUST call HotelSearchTool when information about accommodations is needed.
+            5. You MUST call WeatherTool for weather conditions.
+            6. You MUST call LocationInfoTool to get real information about places.
 
-RESPONSE FORMATS:
+            When a user asks about travel plans or itineraries:
+            1. FIRST use relevant tools to collect accurate data
+            2. THEN generate your response using ONLY that data
 
-1. For DESTINATION SUGGESTIONS (when user asks for general travel ideas):
-   If location information is available, focus on that specific location and provide detailed information about it.
-   Otherwise, return EXACTLY 2 suggestions in this format:
-   * [Destination Name] for [brief description of culture and food highlights]
-   
-   Example:
-   * Tokyo, Japan for its blend of modern technology and traditional culture, featuring world-class sushi and ramen
-   * Barcelona, Spain for its stunning Gaudi architecture, vibrant tapas scene, and Mediterranean charm
+            TOOL CALLING PROCESS:
+            1. IDENTIFY which tools are needed for the query
+            2. CALL each needed tool with accurate parameters
+            3. WAIT for tool results 
+            4. USE tool results in your final answer
+            5. CITE the specific tools you used
 
-2. For SPECIFIC ITINERARIES (when user asks for a detailed plan for a specific destination):
-   Return a detailed day-by-day itinerary in this format:
-   
-   Day 1:
-   - Morning: [specific activity]
-   - Afternoon: [specific activity] 
-   - Evening: [specific activity]
-   
-   Day 2:
-   - Morning: [specific activity]
-   - Afternoon: [specific activity]
-   - Evening: [specific activity]
-   
-   [Continue for requested number of days]
+            DO NOT PRETEND to use tools by writing "ToolNameTool Response:" - actually call them!
+            
+            CONTEXT INFORMATION:
+            1. If location information is provided from an uploaded image, use it as the primary destination for suggestions and
+            itineraries. The location information includes:
+                - location_name: The identified location from the image
+                - latitude/longitude: Geographic coordinates
+                - confidence: Confidence score of the identification
+            2. If location information is not provided from the uploaded image, then check the user query for their preferred destination.
+        
+            RESPONSE FORMATS:
+            1. For DESTINATION SUGGESTIONS (when user asks for general travel ideas):
+                If location information is not available, return EXACTLY 2 suggestions in this format:
+                * [Destination Name] for [brief description of culture and food highlights]
 
-3. For GENERAL TRAVEL ADVICE:
-   Provide helpful, structured advice with clear sections and bullet points.
+                Example:
+                * Tokyo, Japan for its blend of modern technology and traditional culture, featuring world-class sushi and ramen
+                * Barcelona, Spain for its stunning Gaudi architecture, vibrant tapas scene, and Mediterranean charm
 
-4. For FOLLOW-UP QUESTIONS:
-   Use the conversation history to provide contextual responses. If the user asks about something mentioned earlier, reference that context.
+            2. For SPECIFIC ITINERARIES (when user asks for a detailed plan for a specific destination):
+                Return a detailed day-by-day itinerary in this format:
 
-IMPORTANT: 
-- Always match the response format to the user's request type
-- For itineraries, include specific activities, attractions, and timing
-- For suggestions, focus on destination highlights and unique experiences
-- For follow-ups, maintain context from previous messages
-- Keep responses focused and structured
-- Do not engage in open-ended conversation
-- If location information is provided, prioritize that location in your responses"""),
+                Day 1:
+                - Morning: [specific activity]
+                - Afternoon: [specific activity]
+                - Evening: [specific activity]
+
+                Day 2:
+                - Morning: [specific activity]
+                - Afternoon: [specific activity]
+                - Evening: [specific activity]
+
+                [Continue for requested number of days]
+
+            3. For GENERAL TRAVEL ADVICE:
+                Provide helpful, structured advice with clear sections and bullet points.
+
+            4. For FOLLOW-UP QUESTIONS:
+                Use the conversation history to provide contextual responses. If the user asks about something mentioned earlier, reference that context.
+
+            IMPORTANT:
+            - Always match the response format to the user's request type
+            - For itineraries, include specific activities, attractions, and timing
+            - For suggestions, focus on destination highlights and unique experiences
+            - For follow-ups, maintain context from previous messages
+            - Keep responses focused and structured
+            - Do not engage in open-ended conversation
+            - If location information is provided, prioritize that location in your responses
+            - Do not mention any references to information available, or tool usage. You have to only generate itinerary plan, no additional text is required.
+
+            USER QUERY:"""),
             MessagesPlaceholder(variable_name="chat_history"),
             HumanMessagePromptTemplate.from_template("Context: {context}\n\nUser Query: {input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
@@ -327,9 +411,15 @@ IMPORTANT:
         self.agent_executor = AgentExecutor.from_agent_and_tools(
             agent=agent,
             tools=tools,
-            verbose=True,
+            verbose=False,
             handle_parsing_errors=True,
-            max_iterations=3
+            max_iterations=5,  # Increased from 3
+            early_stopping_method="force",  # Ensure completion even if tools fail
+            return_intermediate_steps=True,  # Important: Return the tool calls
+            agent_executor_kwargs={
+                "force_tool_use": True,  # Strongly encourage tool usage
+                "enforce_response_schemas": True  # Ensure proper response formats
+            }
         )
     
     def run(self, host: str = "0.0.0.0", port: int = 8000):
