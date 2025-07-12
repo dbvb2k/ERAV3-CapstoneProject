@@ -71,8 +71,7 @@ class FlightSearchTool(BaseTravelTool):
                                 }
                                 flights.append(flight)
                     print(f"Flights: {flights}")
-                    return flights
-                    
+            return flights        
         except Exception as e:
             print(f"Flight API error: {str(e)}")
             raise Exception(f"Unable to retrieve flight data: {str(e)}")
