@@ -7,101 +7,28 @@ import asyncio
 import aiohttp
 import json
 from typing import Any, List, Mapping, Optional, Dict
-from langchain_core.language_models.llms import LLM
-from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun, AsyncCallbackManagerForLLMRun
 from pydantic import BaseModel, Field, ConfigDict
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-class OpenRouterLLM(LLM):
-    """LangChain LLM implementation for OpenRouter API."""
+class FallbackLLM(BaseChatModel):
+    """LangChain Chat Model implementation with fallback from Local Llama to OpenRouter."""
     
-    api_key: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
-    model: str = "meta-llama/llama-3.1-8b-instruct"
-    temperature: float = Field(default=0.7, ge=0.0, le=1.0)
-    max_tokens: int = 2000
-    
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    
-    @property
-    def _llm_type(self) -> str:
-        return "openrouter"
-
-    async def _acall(
-        self,
-        prompt: str,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> str:
-        """Async call to OpenRouter API."""
-        if not self.api_key:
-            raise ValueError("OpenRouter API key not configured")
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8501",
-            "X-Title": "AI Travel Planner"
-        }
-        
-        payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise Exception(f"OpenRouter API call failed with status {response.status}: {error_text}")
-                
-                result = await response.json()
-                if not result.get('choices') or not result['choices'][0].get('message', {}).get('content'):
-                    raise ValueError("No generated text found in OpenRouter API result")
-                
-                return result['choices'][0]['message']['content']
-
-    def _call(
-        self,
-        prompt: str,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> str:
-        """Sync call to OpenRouter API."""
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._acall(prompt, stop, run_manager, **kwargs))
-
-    @property
-    def _identifying_params(self) -> Mapping[str, Any]:
-        """Get the identifying parameters."""
-        return {
-            "model": self.model,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens
-        }
-
-class FallbackLLM(LLM):
-    """LangChain LLM implementation with fallback from Local Llama to OpenRouter."""
-    
-    llama_api_url: str = Field(default_factory=lambda: os.getenv("LLAMA_API_URL", "http://llamaapi.test2-gpu.travelaibot.local:8080"))
+    llama_api_url: str = Field(default_factory=lambda: os.getenv("LLAMA_API_URL", "http://localhost:8080"))
+    openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
     openrouter_api_key: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
-    temperature: float = Field(default=0.7, ge=0.0, le=1.0)
+    openrouter_model: str = "google/gemini-2.0-flash-001" #"meta-llama/llama-3-8b-instruct"
+    site_url: str = Field(default_factory=lambda: os.getenv("SITE_URL", "http://localhost:8501"))
+    site_name: str = Field(default_factory=lambda: os.getenv("SITE_NAME", "AI Travel Planner"))
+    temperature: float = Field(default=0.2, ge=0.0, le=1.0)
     max_length: int = 2000
-    use_chat_endpoint: bool = True
+    debug: bool = False
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
@@ -132,48 +59,73 @@ class FallbackLLM(LLM):
         print(f"   Local Llama API: {'✅ Available' if self._llama_available else '❌ Not available'}")
         print(f"   OpenRouter API: {'✅ Available' if self._openrouter_available else '❌ Not available'}")
 
-    async def _acall(
+    async def _agenerate(
         self,
-        prompt: str,
+        messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
-    ) -> str:
-        """Async call with fallback logic."""
+    ) -> ChatResult:
+        """Generate chat completion asynchronously."""
+        # Extract tools/functions
+        tools = kwargs.get("tools", [])
+        
+        if self.debug:
+            print(f"Tool calling enabled: {bool(tools)}")
+            if tools:
+                print(f"Number of tools: {len(tools)}")
+                tool_names = [t.get("function", {}).get("name") for t in tools if "function" in t]
+                print(f"Tool names: {tool_names}")
         
         # Try Local Llama API first
         if self._llama_available:
             try:
-                return await self._call_llama_api(prompt)
+                return await self._call_llama_api_chat(messages, tools=tools)
             except Exception as e:
-                print(f"⚠️  Local Llama API failed: {str(e)}")
+                print(f"⚠️ Local Llama API failed: {str(e)}")
                 print("🔄 Falling back to OpenRouter API...")
         
         # Fallback to OpenRouter API
         if self._openrouter_available:
             try:
-                return await self._call_openrouter_api(prompt)
+                return await self._call_openrouter_api_chat(messages, tools=tools)
             except Exception as e:
-                print(f"⚠️  OpenRouter API failed: {str(e)}")
+                print(f"⚠️ OpenRouter API failed: {str(e)}")
         
         # If both fail, raise an error
         raise Exception("Both Local Llama API and OpenRouter API are unavailable")
 
-    async def _call_llama_api(self, prompt: str) -> str:
-        """Call Local Llama API."""
+    async def _call_llama_api_chat(self, messages: List[BaseMessage], tools=None) -> ChatResult:
+        """Call Local Llama API and format response as ChatResult."""
         headers = {"Content-Type": "application/json"}
         
-        messages = [{"role": "user", "content": prompt}]
+        # Convert LangChain messages to API format
+        api_messages = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                api_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                api_messages.append({"role": "assistant", "content": msg.content})
+            elif isinstance(msg, SystemMessage):
+                api_messages.append({"role": "system", "content": msg.content})
+            else:
+                api_messages.append({"role": "user", "content": str(msg.content)})
+        
         payload = {
-            "messages": messages,
-            "max_length": self.max_length,
+            "messages": api_messages,
             "temperature": self.temperature,
-            "top_p": 0.9,
-            "do_sample": True,
-            "num_return_sequences": 1
+            "max_tokens": self.max_length,
         }
         
-        endpoint = f"{self.llama_api_url}/chat"
+        # Add tools if provided
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        
+        endpoint = f"{self.llama_api_url}/v1/chat/completions"
+        
+        if self.debug:
+            print(f"Payload to Llama API: {json.dumps(payload, indent=2)}")
         
         async with aiohttp.ClientSession() as session:
             async with session.post(endpoint, headers=headers, json=payload) as response:
@@ -182,30 +134,67 @@ class FallbackLLM(LLM):
                     raise Exception(f"Local Llama API call failed with status {response.status}: {error_text}")
                 
                 result = await response.json()
-                if not result.get('generated_text'):
-                    raise ValueError("No generated text found in Local Llama API result")
                 
-                return result['generated_text']
+                # Create AI message from response
+                message = result.get("choices", [{}])[0].get("message", {})
+                content = message.get("content", "")
+                
+                # Handle tool calls if present
+                tool_calls = message.get("tool_calls", [])
+                additional_kwargs = {}
+                
+                if tool_calls:
+                    additional_kwargs["tool_calls"] = tool_calls
+                    if self.debug:
+                        print(f"Tool calls detected: {json.dumps(tool_calls, indent=2)}")
+                
+                # Create generation
+                generation = ChatGeneration(
+                    message=AIMessage(content=content, additional_kwargs=additional_kwargs),
+                    generation_info={"finish_reason": result.get("choices", [{}])[0].get("finish_reason")}
+                )
+                
+                return ChatResult(generations=[generation])
 
-    async def _call_openrouter_api(self, prompt: str) -> str:
-        """Call OpenRouter API."""
+    async def _call_openrouter_api_chat(self, messages: List[BaseMessage], tools=None) -> ChatResult:
+        """Call OpenRouter API and format response as ChatResult."""
         headers = {
             "Authorization": f"Bearer {self.openrouter_api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8501",
-            "X-Title": "AI Travel Planner"
+            "HTTP-Referer": self.site_url,
+            "X-Title": self.site_name
         }
         
+        # Convert LangChain messages to API format
+        api_messages = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                api_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                api_messages.append({"role": "assistant", "content": msg.content})
+            elif isinstance(msg, SystemMessage):
+                api_messages.append({"role": "system", "content": msg.content})
+            else:
+                api_messages.append({"role": "user", "content": str(msg.content)})
+        
         payload = {
-            "model": "meta-llama/llama-3.1-8b-instruct",
-            "messages": [{"role": "user", "content": prompt}],
+            "model": self.openrouter_model,
+            "messages": api_messages,
             "temperature": self.temperature,
             "max_tokens": self.max_length
         }
         
+        # Add tools if provided
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        
+        if self.debug:
+            print(f"Payload to OpenRouter API: {json.dumps(payload, indent=2)}")
+        
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                self.openrouter_api_url,
                 headers=headers,
                 json=payload
             ) as response:
@@ -214,25 +203,42 @@ class FallbackLLM(LLM):
                     raise Exception(f"OpenRouter API call failed with status {response.status}: {error_text}")
                 
                 result = await response.json()
-                if not result.get('choices') or not result['choices'][0].get('message', {}).get('content'):
-                    raise ValueError("No generated text found in OpenRouter API result")
                 
-                return result['choices'][0]['message']['content']
+                # Create AI message from response
+                message = result.get("choices", [{}])[0].get("message", {})
+                content = message.get("content", "")
+                
+                # Handle tool calls if present
+                tool_calls = message.get("tool_calls", [])
+                additional_kwargs = {}
+                
+                if tool_calls:
+                    additional_kwargs["tool_calls"] = tool_calls
+                    if self.debug:
+                        print(f"Tool calls detected: {json.dumps(tool_calls, indent=2)}")
+                
+                # Create generation
+                generation = ChatGeneration(
+                    message=AIMessage(content=content, additional_kwargs=additional_kwargs),
+                    generation_info={"finish_reason": result.get("choices", [{}])[0].get("finish_reason")}
+                )
+                
+                return ChatResult(generations=[generation])
 
-    def _call(
+    def _generate(
         self,
-        prompt: str,
+        messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
-    ) -> str:
-        """Sync call with fallback logic."""
+    ) -> ChatResult:
+        """Generate chat completion synchronously."""
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._acall(prompt, stop, run_manager, **kwargs))
+        return loop.run_until_complete(self._agenerate(messages, stop, run_manager, **kwargs))
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
@@ -240,6 +246,7 @@ class FallbackLLM(LLM):
         return {
             "llama_api_url": self.llama_api_url,
             "openrouter_available": self._openrouter_available,
+            "openrouter_model": self.openrouter_model,
             "temperature": self.temperature,
             "max_length": self.max_length
-        } 
+        }

@@ -182,98 +182,38 @@ class SimplifiedAgent:
         
     def setup_agent(self):
         """Set up the agent with tools using FallbackLLM."""
-        # Initialize FallbackLLM
+        # Initialize FallbackLLM with debug mode
         llm = FallbackLLM(
             temperature=0.2,
             max_length=2000,
-            debug=True
+            debug=False  # Enable debug output
         )
-                
-        # Create the prompt template with the same system message from server.py
+        
+        # Create more aggressive system prompt
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content="""You are a travel planning assistant with access to real-time tools.
 
-            MANDATORY TOOL USAGE INSTRUCTIONS:
-            1. For ANY travel planning request, you MUST use tools to get real information.
-            2. NEVER fabricate flight or hotel details - ONLY use the data from tools.
-            3. You MUST call FlightSearchTool when asked about travel between locations.
-            4. You MUST call HotelSearchTool when information about accommodations is needed.
-            5. You MUST call WeatherTool for weather conditions.
-            6. You MUST call LocationInfoTool to get real information about places.
-
-            When a user asks about travel plans or itineraries:
-            1. FIRST use relevant tools to collect accurate data
-            2. THEN generate your response using ONLY that data
-
-            TOOL CALLING PROCESS:
-            1. IDENTIFY which tools are needed for the query
-            2. CALL each needed tool with accurate parameters
-            3. WAIT for tool results 
-            4. USE tool results in your final answer
-            5. CITE the specific tools you used
-
-            DO NOT PRETEND to use tools by writing "ToolNameTool Response:" - actually call them!
+            CRITICAL TOOL INSTRUCTIONS:
+            YOU MUST use tools to answer travel queries. DO NOT fabricate information.
             
-            CONTEXT INFORMATION:
-            1. If location information is provided from an uploaded image, use it as the primary destination for suggestions and
-            itineraries. The location information includes:
-                - location_name: The identified location from the image
-                - latitude/longitude: Geographic coordinates
-                - confidence: Confidence score of the identification
-            2. If location information is not provided from the uploaded image, then check the user query for their preferred destination.
-        
-            RESPONSE FORMATS:
-            1. For DESTINATION SUGGESTIONS (when user asks for general travel ideas):
-                If location information is not available, return EXACTLY 2 suggestions in this format:
-                * [Destination Name] for [brief description of culture and food highlights]
-
-                Example:
-                * Tokyo, Japan for its blend of modern technology and traditional culture, featuring world-class sushi and ramen
-                * Barcelona, Spain for its stunning Gaudi architecture, vibrant tapas scene, and Mediterranean charm
-
-            2. For SPECIFIC ITINERARIES (when user asks for a detailed plan for a specific destination):
-                Return a detailed day-by-day itinerary in this format:
-
-                Day 1:
-                - Morning: [specific activity]
-                - Afternoon: [specific activity]
-                - Evening: [specific activity]
-
-                Day 2:
-                - Morning: [specific activity]
-                - Afternoon: [specific activity]
-                - Evening: [specific activity]
-
-                [Continue for requested number of days]
-
-            3. For GENERAL TRAVEL ADVICE:
-                Provide helpful, structured advice with clear sections and bullet points.
-
-            4. For FOLLOW-UP QUESTIONS:
-                Use the conversation history to provide contextual responses. If the user asks about something mentioned earlier, reference that context.
-
-            IMPORTANT:
-            - Always match the response format to the user's request type
-            - For itineraries, include specific activities, attractions, and timing
-            - For suggestions, focus on destination highlights and unique experiences
-            - For follow-ups, maintain context from previous messages
-            - Keep responses focused and structured
-            - Do not engage in open-ended conversation
-            - If location information is provided, prioritize that location in your responses
-            - Do not mention any references to information available, or tool usage. You have to only generate itinerary plan, no additional text is required.
-
-            USER QUERY:"""),
+            MANDATORY TOOL USAGE INSTRUCTIONS:
+            1. When asked about travel between locations, you MUST call FlightSearchTool with origin, destination and date.
+            2. When asked about accommodations, you MUST call HotelSearchTool with location, check-in and check-out dates.
+            3. When asked about weather, you MUST call WeatherTool with location.
+            4. ALWAYS call tools FIRST before generating responses about flights, hotels, or weather.
+            
+            IMPORTANT: Never fake tool calls by writing "I have called..." - You must actually call the tools through the API.
+            """),
             MessagesPlaceholder(variable_name="chat_history"),
             HumanMessagePromptTemplate.from_template("Context: {context}\n\nUser Query: {input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
         
-        # Create the agent
-        agent = OpenAIFunctionsAgent(
-            llm=llm,
-            tools=self.tools,
-            prompt=prompt
-        )
+        # Import and create the agent with the correct approach
+        from langchain.agents import AgentExecutor, create_openai_tools_agent
+        
+        # Create the agent properly as a tools agent
+        agent = create_openai_tools_agent(llm, self.tools, prompt)
         
         # Create the agent executor with more aggressive tool usage
         self.agent_executor = AgentExecutor.from_agent_and_tools(
@@ -284,12 +224,10 @@ class SimplifiedAgent:
             max_iterations=5,
             early_stopping_method="force",
             return_intermediate_steps=True,
-            force_tool_use = True,
-            enforce_response_schemas=True
         )
         
         logger.info("Agent initialized with FallbackLLM and tools")
-    
+        
     def setup_routes(self):
         @self.app.post("/agent/execute")
         async def execute_agent(request: AgentRequest):
@@ -336,22 +274,30 @@ class SimplifiedAgent:
                 logger.info(f"Executing agent with query: {request.query}")
                 logger.info(f"Agent input: {json.dumps(agent_input, default=str)}")
                 
-                # Execute the agent
+                # Add debug for agent execution
+                print("==== EXECUTING AGENT WITH TOOLS ====")
+                for tool in self.tools:
+                    print(f"Available tool: {tool.name} - {tool.description.split('.')[0]}")
+                print("=================================")
+
                 result = await self.agent_executor.ainvoke(agent_input)
-                
-                # Extract tool usage information
+
+                # Debug the result
+                print(f"==== AGENT RESULT ====")
+                print(f"Intermediate steps: {len(result.get('intermediate_steps', []))}")
                 tool_calls = []
-                if "intermediate_steps" in result:
+                for i, step in enumerate(result.get('intermediate_steps', [])):
                     logger.info(f"Intermediate steps: {len(result['intermediate_steps'])}")
-                    for step in result["intermediate_steps"]:
-                        if len(step) >= 2:
-                            action, action_output = step
-                            logger.info(f"Tool used: {action.tool}")
-                            tool_calls.append({
+                    if len(step) >= 2:
+                        action, output = step
+                        print(f"Step {i+1}: Tool {action.tool} called with inputs {action.tool_input}")
+                        print(f"Output: {output}")
+                        tool_calls.append({
                                 "tool": action.tool,
                                 "input": action.tool_input,
-                                "output": action_output
+                                "output": output
                             })
+                print("======================")                            
                 
                 # Add assistant response to conversation history
                 if "output" in result:

@@ -304,52 +304,55 @@ def get_langchain_tools():
     Returns:
         List of LangChain Tool objects
     """
+    from langchain.tools import StructuredTool
+    
+    # Create structured tools that properly handle multiple arguments
     return [
-        Tool(
-            name="FlightSearchTool",
+        StructuredTool.from_function(
             func=flight_search,
+            name="FlightSearchTool",
             description="""Search for flights between two cities on a specific date.
-            Args:
-                origin (str): Origin city
-                destination (str): Destination city  
-                date (str): Date in YYYY-MM-DD format
-            Returns:
-                List of flight options with airlines and prices
-            """
+    Args:
+        origin (str): Origin city
+        destination (str): Destination city  
+        date (str): Date in YYYY-MM-DD format
+    Returns:
+        List of flight options with airlines and prices
+    """
         ),
-        Tool(
-            name="HotelSearchTool",
+        StructuredTool.from_function(
             func=hotel_search,
+            name="HotelSearchTool",
             description="""Search for hotels in a city between check-in and check-out dates.
-            Args:
-                location (str): City or location name
-                check_in (str): Check-in date in YYYY-MM-DD format
-                check_out (str): Check-out date in YYYY-MM-DD format
-            Returns:
-                List of hotel options with names, prices, and ratings
-            """
+    Args:
+        location (str): City or location name
+        check_in (str): Check-in date in YYYY-MM-DD format
+        check_out (str): Check-out date in YYYY-MM-DD format
+    Returns:
+        List of hotel options with names, prices, and ratings
+    """
         ),
-        Tool(
-            name="WeatherTool",
+        StructuredTool.from_function(
             func=get_weather,
+            name="WeatherTool",
             description="""Get weather information for a location.
-            Args:
-                location (str): City or location name
-                date (str, optional): Date in YYYY-MM-DD format
-            Returns:
-                Weather information including temperature and description
-            """
+    Args:
+        location (str): City or location name
+        date (str, optional): Date in YYYY-MM-DD format
+    Returns:
+        Weather information including temperature and description
+    """
         ),
-        Tool(
-            name="ItineraryPlannerTool",
+        StructuredTool.from_function(
             func=plan_itinerary,
+            name="ItineraryPlannerTool",
             description="""Generate a travel itinerary for a location.
-            Args:
-                location (str): Destination city or location
-                duration (int): Trip duration in days
-                preferences (dict, optional): Preferences dictionary
-            Returns:
-                Detailed itinerary with daily plans
-            """
+    Args:
+        location (str): Destination city or location
+        duration (int): Trip duration in days
+        preferences (dict, optional): Preferences dictionary
+    Returns:
+        Detailed itinerary with daily plans
+    """
         )
     ]
