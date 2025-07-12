@@ -1,6 +1,6 @@
 # Minimal requirements for Llama API inference service
 # Core ML frameworks for inference
-torch==2.1.0
+# torch==2.1.0
 transformers==4.36.2
 tokenizers==0.15.0
 accelerate==0.24.1
