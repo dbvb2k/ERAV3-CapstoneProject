@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta
 import nest_asyncio
 from models import TravelPreferences, TravelRequest
-from agents.simplified_tools import get_weather, hotel_search, flight_search, plan_itinerary
+from simplified_tools import get_weather, hotel_search, flight_search, plan_itinerary
 import os
 from dotenv import load_dotenv
 from typing import Dict, Any, List

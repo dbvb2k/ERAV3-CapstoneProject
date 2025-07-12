@@ -15,8 +15,8 @@ from langchain.prompts import HumanMessagePromptTemplate
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_core.messages import AIMessage, HumanMessage
 from dotenv import load_dotenv
-from agents.simplified_tools import get_langchain_tools
-from mcp_server.fallback_llm import FallbackLLM  # Import the FallbackLLM
+from simplified_tools import get_langchain_tools
+from fallback_llm import FallbackLLM  # Import the FallbackLLM
 
 # Load environment variables
 load_dotenv()
