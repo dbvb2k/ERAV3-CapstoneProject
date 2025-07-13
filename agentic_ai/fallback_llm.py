@@ -23,7 +23,7 @@ class FallbackLLM(BaseChatModel):
     llama_api_url: str = Field(default_factory=lambda: os.getenv("LLAMA_API_URL", "http://localhost:8080"))
     openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
     openrouter_api_key: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
-    openrouter_model: str = "google/gemini-2.0-flash-001" #"meta-llama/llama-3-8b-instruct"
+    openrouter_model: str = "meta-llama/llama-3-8b-instruct" # "google/gemini-2.0-flash-001" 
     site_url: str = Field(default_factory=lambda: os.getenv("SITE_URL", "http://localhost:8501"))
     site_name: str = Field(default_factory=lambda: os.getenv("SITE_NAME", "AI Travel Planner"))
     temperature: float = Field(default=0.2, ge=0.0, le=1.0)
@@ -137,17 +137,20 @@ class FallbackLLM(BaseChatModel):
                 
                 # Create AI message from response
                 message = result.get("choices", [{}])[0].get("message", {})
-                content = message.get("content", "")
-                
-                # Handle tool calls if present
+                content = message.get("content", "")  # Get content or empty string
                 tool_calls = message.get("tool_calls", [])
                 additional_kwargs = {}
-                
+
+                # Handle tool calls if present
                 if tool_calls:
                     additional_kwargs["tool_calls"] = tool_calls
                     if self.debug:
                         print(f"Tool calls detected: {json.dumps(tool_calls, indent=2)}")
-                
+                    
+                    # LangChain requires content to be a string, not None
+                    if content is None:
+                        content = ""  # Ensure content is never None
+
                 # Create generation
                 generation = ChatGeneration(
                     message=AIMessage(content=content, additional_kwargs=additional_kwargs),
