@@ -19,6 +19,7 @@ city_to_iata = {
     "Mumbai": "BOM",
     "Delhi": "DEL",
     "Bengaluru": "BLR",
+    "Bangalore": "BLR",
     "Chennai": "MAA",
     "Kolkata": "CCU",
     "Hyderabad": "HYD",
