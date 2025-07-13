@@ -1,3 +1,8 @@
+import os
+import json
+import traceback
+import uuid
+import time
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,7 +20,6 @@ from transformers import (
     pipeline
 )
 from peft import PeftModel, PeftConfig
-import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
@@ -98,6 +102,7 @@ class ChatMessage(BaseModel):
     role: str = Field(..., description="Role of the message sender (user/assistant)")
     content: str = Field(..., description="Content of the message")
 
+
 class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
     max_length: Optional[int] = Field(512, description="Maximum length of generated response")
@@ -105,7 +110,10 @@ class ChatRequest(BaseModel):
     top_p: Optional[float] = Field(0.9, description="Top-p sampling parameter")
     do_sample: Optional[bool] = Field(True, description="Whether to use sampling")
     num_return_sequences: Optional[int] = Field(1, description="Number of sequences to return")
-
+    tools: Optional[List[Dict[str, Any]]] = Field(None, description="Tools/functions the model can call")
+    tool_choice: Optional[str] = Field("auto", description="How tools should be chosen")
+    
+    
 class TextGenerationRequest(BaseModel):
     prompt: str = Field(..., description="Input prompt for text generation")
     max_length: Optional[int] = Field(512, description="Maximum length of generated text")
@@ -122,8 +130,11 @@ class GenerationResponse(BaseModel):
     timestamp: str
 
 
-def get_model_precision_and_kwargs(gpu_available, bnb_gpu_support):
-    """Determines model loading kwargs based on API_MODE and hardware support."""
+def get_model_precision_and_kwargs(gpu_available: bool, bnb_gpu_support: bool) -> dict:
+    """
+    Determines model loading kwargs based on API_MODE and hardware support.
+    Returns a plain dict suitable for from_pretrained().
+    """
     model_kwargs = {
         "trust_remote_code": True
     }
@@ -136,8 +147,7 @@ def get_model_precision_and_kwargs(gpu_available, bnb_gpu_support):
         else:
             logger.warning("Production mode selected, but no GPU available. Falling back to CPU.")
             model_kwargs["device_map"] = "cpu"
-    
-    # Default to local mode (4-bit quantization)
+            model_kwargs["torch_dtype"] = torch.float32
     else:
         logger.info("Local mode enabled: attempting to load model with 4-bit quantization.")
         if gpu_available and bnb_gpu_support:
@@ -150,7 +160,7 @@ def get_model_precision_and_kwargs(gpu_available, bnb_gpu_support):
             )
             model_kwargs["quantization_config"] = bnb_config
             model_kwargs["device_map"] = "auto"
-            model_kwargs["torch_dtype"] = torch.bfloat16 # Still specify for compute
+            model_kwargs["torch_dtype"] = torch.bfloat16
         elif gpu_available:
             logger.warning("4-bit not supported, falling back to 16-bit precision on GPU.")
             model_kwargs["torch_dtype"] = torch.bfloat16
@@ -158,7 +168,8 @@ def get_model_precision_and_kwargs(gpu_available, bnb_gpu_support):
         else:
             logger.info("No GPU available, using CPU mode.")
             model_kwargs["device_map"] = "cpu"
-            
+            model_kwargs["torch_dtype"] = torch.float32
+
     return model_kwargs
 
 
@@ -233,7 +244,7 @@ def load_model():
         
         # Try to find and fix the config.json file
         config_paths = [
-            os.path.join(peft_config.base_model_name_or_path, "config.json"),
+            os.path.join(peft_config.base_model_name_or_path if peft_config.base_model_name_or_path is not None else "", "config.json"),
             "model/COMPLETE_TRAVEL_MODEL/config.json"
         ]
         
@@ -307,6 +318,8 @@ def load_model():
         model = PeftModel.from_pretrained(base_model, "model/COMPLETE_TRAVEL_MODEL")
         
         # Create text generation pipeline
+        # from transformers import PreTrainedModel
+
         generator = pipeline(
             "text-generation",
             model=model,
@@ -342,6 +355,249 @@ def format_chat_prompt(messages: List[ChatMessage]) -> str:
     
     return formatted_prompt
 
+
+def extract_tool_calls(text, tools):
+    """Extract tool calls from generated text"""
+    import re
+    import json
+    import uuid
+    
+    # Look for JSON in the response
+    json_pattern = r'\{[\s\S]*?\}'
+    json_matches = re.findall(json_pattern, text)
+    
+    if not json_matches:
+        return None
+        
+    # Try to parse each JSON block
+    for json_str in json_matches:
+        try:
+            data = json.loads(json_str)
+            
+            # If the parsed JSON has tool_calls
+            if "tool_calls" in data:
+                return data["tool_calls"]
+                
+            # If we found function name and arguments
+            if "function" in data and "name" in data["function"] and "arguments" in data["function"]:
+                # Format in the expected structure
+                return [{
+                    "index": 0,
+                    "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
+                    "type": "function",
+                    "function": {
+                        "name": data["function"]["name"],
+                        "arguments": data["function"]["arguments"]
+                    }
+                }]
+                
+            # Check for direct function call format
+            if "name" in data and "arguments" in data:
+                # Format in the expected structure
+                return [{
+                    "index": 0,
+                    "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
+                    "type": "function",
+                    "function": {
+                        "name": data["name"],
+                        "arguments": data["arguments"]
+                    }
+                }]
+                
+        except json.JSONDecodeError:
+            continue
+    
+    # If we find function call patterns without proper JSON
+    # This is a fallback for models that don't format JSON correctly
+    for tool in tools:
+        if "function" in tool:
+            function_name = tool["function"]["name"]
+            if function_name in text:
+                # Try to extract arguments
+                args_match = re.search(rf'{function_name}\s*\((.*?)\)', text, re.DOTALL)
+                if args_match:
+                    args_str = args_match.group(1)
+                    try:
+                        # Try to construct arguments as JSON
+                        args_pairs = args_str.split(',')
+                        args_dict = {}
+                        for pair in args_pairs:
+                            if ':' in pair:
+                                k, v = pair.split(':', 1)
+                                args_dict[k.strip().strip('"\'').strip()] = v.strip().strip('"\'').strip()
+                        
+                        return [{
+                            "index": 0,
+                            "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
+                            "type": "function",
+                            "function": {
+                                "name": function_name,
+                                "arguments": json.dumps(args_dict)
+                            }
+                        }]
+                    except:
+                        # If parsing fails, return with empty arguments
+                        return [{
+                            "index": 0,
+                            "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
+                            "type": "function",
+                            "function": {
+                                "name": function_name,
+                                "arguments": "{}"
+                            }
+                        }]
+    
+    return None
+
+
+def generate_tool_response(messages, tools, temperature=0.7, max_tokens=1024):
+    """Generate response with tool calling"""
+    import uuid
+    import time
+    import json
+
+    global model, tokenizer
+
+    if model is None or tokenizer is None:
+        logger.error("Model or tokenizer is not loaded in generate_tool_response.")
+        return {
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "llama-3-8b-instruct-travel",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Error: Model or tokenizer is not loaded."
+                    },
+                    "finish_reason": "error"
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        }
+
+    try:
+        # Convert messages to prompt
+        system_msg = None
+        prompt = ""
+
+        # Extract system message if present
+        for msg in messages:
+            if msg["role"] == "system":
+                system_msg = msg["content"]
+                break
+
+        # Build prompt with system message first
+        if system_msg:
+            prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_msg}<|eot_id|>"
+
+        # Add other messages
+        for msg in messages:
+            if msg["role"] != "system":  # Skip system message as we already added it
+                if msg["role"] == "user":
+                    prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{msg['content']}<|eot_id|>"
+                elif msg["role"] == "assistant":
+                    prompt += f"<|start_header_id|>assistant<|end_header_id|>\n\n{msg['content']}<|eot_id|>"
+
+        # Add assistant header for response
+        prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+
+        # Append tool definitions to the prompt to guide the model
+        tools_description = "\n\nYou have access to the following tools:\n"
+        for tool in tools:
+            if "function" in tool:
+                func = tool["function"]
+                tools_description += f"- {func['name']}: {func['description']}\n"
+
+        # Add instructions about tool usage
+        instruction = "\nTo use a tool, respond with a JSON object that includes a 'tool_calls' array, where each item has 'id', 'type': 'function', and 'function' with 'name' and 'arguments'."
+
+        # Combine final prompt
+        final_prompt = prompt + tools_description + instruction
+
+        # Tokenize prompt
+        inputs = tokenizer(final_prompt, return_tensors="pt", truncation=True, max_length=2048)
+        input_length = inputs.input_ids.shape[1]
+
+        # Move inputs to device
+        device = next(model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        logger.info(f"Generating tool response with temperature {temperature}")
+
+        # Generate response
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_length=input_length + max_tokens,
+                temperature=temperature,
+                top_p=0.9,
+                do_sample=True,
+                num_return_sequences=1,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id
+            )
+
+        # Decode response
+        generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+
+        # Try to parse tool calls from the generated text
+        tool_calls = extract_tool_calls(generated_text, tools)
+
+        # Build response
+        response = {
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "llama-3-8b-instruct-travel",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None if tool_calls else generated_text.strip(),
+                        "tool_calls": tool_calls if tool_calls else None
+                    },
+                    "finish_reason": "tool_calls" if tool_calls else "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": input_length,
+                "completion_tokens": len(outputs[0]) - input_length,
+                "total_tokens": len(outputs[0])
+            }
+        }
+
+        # Clean up response
+        if response["choices"][0]["message"]["tool_calls"] is None:
+            del response["choices"][0]["message"]["tool_calls"]
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Error generating tool response: {str(e)}")
+        logger.error(traceback.format_exc())
+        # Return a basic error response
+        return {
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "llama-3-8b-instruct-travel",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": f"Error generating tool response: {str(e)}"
+                    },
+                    "finish_reason": "error"
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        }
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -356,16 +612,18 @@ async def health_check():
 async def custom_swagger_ui_html():
     """Custom Swagger UI endpoint"""
     return get_swagger_ui_html(
-        openapi_url=app.openapi_url,
+        openapi_url=app.openapi_url or "/openapi.json",
         title=app.title + " - API Documentation",
         swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
     )
 
-@app.post("/chat", response_model=GenerationResponse)
+## TODO: Add functional tool calling capability here
+@app.post("/v1/chat/completions", response_model=Dict[str, Any])
 async def chat_completion(request: ChatRequest):
     """
     Generate chat completion using the fine-tuned Llama model
+    with support for function calling/tools
     """
     if model is None or tokenizer is None:
         raise HTTPException(
@@ -375,48 +633,88 @@ async def chat_completion(request: ChatRequest):
     
     try:
         # Format chat messages
-        prompt = format_chat_prompt(request.messages)
-        
-        # Tokenize input
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
-        input_length = inputs.input_ids.shape[1]
-        
-        # Move inputs to the same device as the model
-        device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        formatted_messages = []
+        for msg in request.messages:
+            formatted_messages.append({"role": msg.role, "content": msg.content})
         
         # Generate response
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_length=input_length + request.max_length,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                do_sample=request.do_sample,
-                num_return_sequences=request.num_return_sequences,
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id
+        temperature = request.temperature if request.temperature is not None else 0.7
+        
+        # Handle tool calls if tools are provided
+        use_tool_calling = request.tools is not None and len(request.tools) > 0
+        
+        logger.info(f"Chat request with tool calling: {use_tool_calling}")
+        if use_tool_calling:
+            logger.info(f"Tools: {json.dumps(request.tools, indent=2)}")
+            
+        # Process with tools if provided
+        if use_tool_calling:
+            # Call the model with tools
+            response = generate_tool_response(
+                formatted_messages, 
+                request.tools, 
+                temperature=temperature, 
+                max_tokens=request.max_length if request.max_length is not None else 512
             )
-        
-        # Decode response
-        generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
-        generated_length = len(outputs[0]) - input_length
-        
-        return GenerationResponse(
-            generated_text=generated_text.strip(),
-            input_length=input_length,
-            generated_length=generated_length,
-            model_name="llama-3-8b-instruct-travel",
-            timestamp=datetime.utcnow().isoformat()
-        )
-        
+            return response
+        else:
+            # Normal chat completion without tools
+            with torch.no_grad():
+                # Tokenize input for length calculation
+                prompt = format_chat_prompt(request.messages)
+                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+                input_length = inputs.input_ids.shape[1]
+                
+                # Move inputs to device
+                device = next(model.parameters()).device
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                
+                # Generate response
+                outputs = model.generate(
+                    **inputs,
+                    max_length=input_length + request.max_length,
+                    temperature=temperature,
+                    top_p=request.top_p,
+                    do_sample=request.do_sample,
+                    num_return_sequences=request.num_return_sequences,
+                    pad_token_id=tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id
+                )
+                
+                # Decode response
+                generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+                
+                # Return in OpenAI-compatible format
+                return {
+                    "id": f"chatcmpl-{uuid.uuid4()}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": "llama-3-8b-instruct-travel",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": generated_text.strip()
+                            },
+                            "finish_reason": "stop"
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": input_length,
+                        "completion_tokens": len(outputs[0]) - input_length,
+                        "total_tokens": len(outputs[0])
+                    }
+                }
+                
     except Exception as e:
         logger.error(f"Error in chat completion: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Generation error: {str(e)}"
         )
-
+        
 @app.post("/generate", response_model=GenerationResponse)
 async def text_generation(request: TextGenerationRequest):
     """
