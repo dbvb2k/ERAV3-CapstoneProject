@@ -76,6 +76,7 @@ class SimplifiedAgent:
         self.tools = get_langchain_tools()
         self.agent_executor = None
         self.conversation_sessions = {}  # session_id -> ConversationSession
+        self.travel_dates =[]
         
         # Set up routes and agent
         self.setup_routes()
@@ -178,15 +179,109 @@ class SimplifiedAgent:
                 dates.append(date_obj)
             except ValueError:
                 continue
-        
-        return dates if dates else None
+        self.travel_dates = dates if dates else []
+        return dates if dates else []
 
-    async def _maybe_await(self, obj):
-        """Helper to await an object if it's a coroutine, otherwise return it as is."""
+    # async def _maybe_await(self, obj):
+    #     """Helper to await an object if it's a coroutine, otherwise return it as is."""
+    #     if asyncio.iscoroutine(obj):
+    #         try:
+    #             return await obj
+    #         except Exception as e:
+    #             logger.error(f"Error awaiting coroutine: {str(e)}")
+    #             return {"error": f"Error executing tool: {str(e)}"}
+    #     return obj
+    
+    async def deep_await_coroutines(self, obj):
+        """Recursively await any coroutines in a nested structure."""
         if asyncio.iscoroutine(obj):
             return await obj
-        return obj
         
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                result[key] = await self.deep_await_coroutines(value)
+            return result
+        elif isinstance(obj, list):
+            return [await self.deep_await_coroutines(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple([await self.deep_await_coroutines(item) for item in obj])
+        else:
+            return obj
+    
+    
+    async def format_tool_results_for_response(self, query: str, tool_calls: list) -> str:
+        """Create a formatted string with tool results for the agent to use in its final response."""
+        
+        # Extract actual real data from tool calls
+        flight_data = []
+        hotel_data = []
+        
+        for tc in tool_calls:
+            if tc["tool"] == "FlightSearchTool" and isinstance(tc["output"], list) and tc["output"]:
+                flight_data = tc["output"]
+            elif tc["tool"] == "HotelSearchTool" and isinstance(tc["output"], list) and tc["output"]:
+                hotel_data = tc["output"]
+        
+        # Format flight data in user-friendly way
+        flight_section = ""
+        if flight_data:
+            flight_section = "**Flight Options from Mumbai:**\n\n"
+            for i, flight in enumerate(flight_data[:3], 1):
+                flight_section += f"{i}. **{flight.get('airline', 'Unknown')} {flight.get('flight_number', '')}**\n"
+                flight_section += f"   - Departure: {flight.get('departure_time', 'N/A')}\n"
+                flight_section += f"   - Arrival: {flight.get('arrival_time', 'N/A')}\n" 
+                flight_section += f"   - Duration: {flight.get('duration', 'N/A')}\n"
+                flight_section += f"   - Price: ₹{flight.get('price', 'N/A')}\n\n"
+        
+        # Format hotel data in user-friendly way
+        hotel_section = ""
+        if hotel_data:
+            hotel_section = "**Hotel Options:**\n\n"
+            for i, hotel in enumerate(hotel_data[:3], 1):
+                hotel_section += f"{i}. **{hotel.get('name', 'Unknown')}**\n"
+                hotel_section += f"   - Price: {hotel.get('price', 'N/A')} per night\n"
+                hotel_section += f"   - Rating: {hotel.get('rating', 'N/A')}/5 ({hotel.get('reviews_count', 0)} reviews)\n"
+                if hotel.get('link'):
+                    hotel_section += f"   - Website: {hotel.get('link')}\n\n"
+                else:
+                    hotel_section += "\n"
+        
+        # Create message for LLM
+        from_date = ""
+        to_date = ""
+        if hasattr(self, 'travel_dates') and self.travel_dates and len(self.travel_dates) >= 2:
+            from_date = self.travel_dates[0]
+            to_date = self.travel_dates[1]
+        
+        # Create the prompt for generating the final response
+        prompt = f"""
+        You are a travel assistant helping a user plan their trip. The user asked:
+        "{query}"
+
+        I have collected REAL flight and hotel data that you MUST use in your response. 
+        Do not invent or fabricate any flight or hotel information.
+
+        {flight_section}
+        {hotel_section}
+
+        Based ONLY on this real data, create a detailed travel itinerary for the user that:
+        1. Acknowledges their request
+        2. Presents the flight options using ONLY the data provided above
+        3. Recommends hotels based ONLY on the data provided above
+        4. Creates a daily itinerary for their trip from {from_date} to {to_date}
+        5. Focuses on the user's interests in culture and food with an adventure travel style
+        6. Makes recommendations for attractions and activities at the destination
+
+        Format your response in a clear, helpful way. Do not mention this prompt or that you're using "real data" - simply present the information as your recommendations.
+        """
+
+        # Call LLM to generate final response
+        llm = FallbackLLM(temperature=0.2, max_length=2000)
+        enhanced_response = await llm.apredict(prompt)
+        return enhanced_response
+    
+    
     def setup_agent(self):
         """Set up the agent with tools using FallbackLLM."""
         # Initialize FallbackLLM with debug mode
@@ -208,6 +303,14 @@ class SimplifiedAgent:
             2. When asked about accommodations, you MUST call HotelSearchTool with location, check-in and check-out dates.
             3. When asked about weather, you MUST call WeatherTool with location.
             4. ALWAYS call tools FIRST before generating responses about flights, hotels, or weather.
+            
+            CRITICAL RESPONSE INSTRUCTIONS:
+            1. After receiving tool outputs, you MUST incorporate the actual data from the tools in your response.
+            2. For flights: Include specific flight numbers, prices, times, and airlines from the tool response.
+            3. For hotels: Include actual hotel names, prices, ratings, and locations from the tool response.
+            4. NEVER reference tool outputs in JSON format in your final answer.
+            5. Format the information in a readable, user-friendly way.
+            6. Always create a detailed itinerary based on REAL tool outputs, not fabricated information.
             
             IMPORTANT: Never fake tool calls by writing "I have called..." - You must actually call the tools through the API.
             """),
@@ -255,29 +358,22 @@ class SimplifiedAgent:
                 # Add user message to conversation history
                 session.add_message("user", request.query)
                 
-                # Update session context with new information
-                if request.context:
-                    session.context.update(request.context)
-                
-                # Prepare input with conversation history
-                memory_variables = session.memory.load_memory_variables({})
-                chat_history = memory_variables.get("chat_history", [])
-                
-                # Create input with conversation context
+                # Extract travel dates if available
+                if hasattr(self, '_extract_travel_dates') and callable(self._extract_travel_dates):
+                    self.travel_dates = self._extract_travel_dates(request.query)
+                    
+                # Prepare input for the agent
                 agent_input = {
-                    "input": enhanced_query,
+                    "input": f"[IMPORTANT: Use appropriate tools to get REAL flight and hotel data] {request.query}",
                     "context": self._format_context_for_prompt(session.context),
-                    "chat_history": chat_history
+                    "chat_history": session.memory.chat_memory.messages
                 }
                 
-                # Extract and add travel dates if present
-                travel_dates = self._extract_travel_dates(request.query)
-                if travel_dates and "context" in agent_input:
-                    agent_input["travel_dates"] = [d.strftime("%Y-%m-%d") for d in travel_dates]
-                    if isinstance(agent_input["context"], str):
-                        agent_input["context"] += f"\nTravel dates: {', '.join(agent_input['travel_dates'])}"
+                # Add travel dates if extracted
+                if hasattr(self, 'travel_dates') and self.travel_dates:
+                    agent_input["travel_dates"] = self.travel_dates
                 
-                # Debug information
+                # Execute the agent
                 logger.info(f"Executing agent with query: {request.query}")
                 logger.info(f"Agent input: {json.dumps(agent_input, default=str)}")
                 
@@ -288,41 +384,51 @@ class SimplifiedAgent:
                 print("=================================")
 
                 result = await self.agent_executor.ainvoke(agent_input)
-
+                processed_result = await self.deep_await_coroutines(result)
+                
+                # Extract and process tool calls
+                tool_calls = []
+                for i, step in enumerate(processed_result.get('intermediate_steps', [])):
+                    if len(step) >= 2:
+                        action, output = step
+                        tool_calls.append({
+                            "tool": action.tool,
+                            "input": action.tool_input,
+                            "output": output
+                        })
+                
+                # Process the result to ensure real data is used in the final response
+                if tool_calls:
+                    # Generate enhanced response with real tool data
+                    enhanced_response = await self.format_tool_results_for_response(
+                        request.query,
+                        tool_calls
+                    )
+                    
+                    # Replace the original output
+                    processed_result["output"] = enhanced_response
+                    
+                    # Add to conversation history
+                    session.add_message("assistant", enhanced_response)
+                else:
+                    # If no tool calls were made, use the original response
+                    session.add_message("assistant", processed_result.get("output", ""))
+                
                 # Debug the result
                 print(f"==== AGENT RESULT ====")
-                print(f"Intermediate steps: {len(result.get('intermediate_steps', []))}")
-                tool_calls = []
-                for i, step in enumerate(result.get('intermediate_steps', [])):
-                    logger.info(f"Intermediate steps: {len(result['intermediate_steps'])}")
+                print(f"Intermediate steps: {len(processed_result.get('intermediate_steps', []))}")
+                for i, step in enumerate(processed_result.get('intermediate_steps', [])):
+                    logger.info(f"Intermediate steps: {len(processed_result['intermediate_steps'])}")
                     if len(step) >= 2:
                         action, output = step
                         print(f"Step {i+1}: Tool {action.tool} called with inputs {action.tool_input}")
                         print(f"Output: {output}")
-                        
-                        actual_output = output
-                        try:
-                            actual_output = await self._maybe_await(output)
-                            print(f"Awaited output: {actual_output}")
-                        except Exception as e:
-                            actual_output = {"error": f"Error executing tool: {str(e)}"}
-                            print(f"Error awaiting coroutine: {str(e)}")
-                        
-                        tool_calls.append({
-                            "tool": action.tool,
-                            "input": action.tool_input,
-                            "output": actual_output
-                        })
-                print("======================")                            
-                
-                # Add assistant response to conversation history
-                if "output" in result:
-                    session.add_message("assistant", result["output"])
+                print("======================")
                 
                 return {
                     "status": "success", 
-                    "result": result,
-                    "tool_calls": tool_calls,  # Now contains awaited results
+                    "result": processed_result,
+                    "tool_calls": tool_calls,
                     "session_id": session_id,
                     "conversation_history": session.get_messages()
                 }

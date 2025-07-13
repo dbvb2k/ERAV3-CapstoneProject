@@ -6,7 +6,7 @@ import os
 import asyncio
 import aiohttp
 import json
-from typing import Any, List, Mapping, Optional, Dict
+from typing import Any, List, Sequence, Mapping, Optional, Dict
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -61,7 +61,7 @@ class FallbackLLM(BaseChatModel):
 
     async def _agenerate(
         self,
-        messages: List[BaseMessage],
+        messages: Sequence[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
@@ -95,7 +95,7 @@ class FallbackLLM(BaseChatModel):
         # If both fail, raise an error
         raise Exception("Both Local Llama API and OpenRouter API are unavailable")
 
-    async def _call_llama_api_chat(self, messages: List[BaseMessage], tools=None) -> ChatResult:
+    async def _call_llama_api_chat(self, messages: Sequence[BaseMessage], tools=None) -> ChatResult:
         """Call Local Llama API and format response as ChatResult."""
         headers = {"Content-Type": "application/json"}
         
@@ -159,7 +159,7 @@ class FallbackLLM(BaseChatModel):
                 
                 return ChatResult(generations=[generation])
 
-    async def _call_openrouter_api_chat(self, messages: List[BaseMessage], tools=None) -> ChatResult:
+    async def _call_openrouter_api_chat(self, messages: Sequence[BaseMessage], tools=None) -> ChatResult:
         """Call OpenRouter API and format response as ChatResult."""
         headers = {
             "Authorization": f"Bearer {self.openrouter_api_key}",
@@ -230,7 +230,7 @@ class FallbackLLM(BaseChatModel):
 
     def _generate(
         self,
-        messages: List[BaseMessage],
+        messages: Sequence[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
@@ -253,3 +253,10 @@ class FallbackLLM(BaseChatModel):
             "temperature": self.temperature,
             "max_length": self.max_length
         }
+    
+    async def apredict(self, prompt: str) -> str:
+        """Asynchronously generate a text completion from a single prompt string."""
+        messages = [HumanMessage(content=prompt)]
+        result = await self._agenerate(messages)
+        content = result.generations[0].message.content
+        return content if isinstance(content, str) else str(content)
