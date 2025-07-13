@@ -13,211 +13,253 @@ logger = logging.getLogger(__name__)
 
 # Simple tool functions - each performs a specific task
 
-async def flight_search(origin: str, destination: str, date: str) -> List[Dict]:
-    """
-    Search for flights between origin and destination on a specific date.
+# Mapping of major Indian and International cities to their IATA codes
+city_to_iata = {
+    # Indian Cities
+    "Mumbai": "BOM",
+    "Delhi": "DEL",
+    "Bengaluru": "BLR",
+    "Chennai": "MAA",
+    "Kolkata": "CCU",
+    "Hyderabad": "HYD",
+    "Pune": "PNQ",
+    "Ahmedabad": "AMD",
+    "Goa": "GOI",
+    "Jaipur": "JAI",
+    "Kochi": "COK",
     
-    Args:
-        origin: Origin city
-        destination: Destination city
-        date: Travel date in YYYY-MM-DD format
+    # International Cities
+    "New York": "JFK",
+    "London": "LHR",
+    "Paris": "CDG",
+    "Tokyo": "HND",
+    "Dubai": "DXB",
+    "Singapore": "SIN",
+    "Hong Kong": "HKG",
+    "Sydney": "SYD",
+    "Los Angeles": "LAX",
+    "San Francisco": "SFO",
+    "Amsterdam": "AMS",
+    "Frankfurt": "FRA",
+    "Toronto": "YYZ",
+    "Bangkok": "BKK",
+    "Istanbul": "IST"
+}
+
+async def flight_search(origin: str, destination: str, depart_date: str, return_date: str = '', adults: int = 1) -> List[Dict]:
+    """Search for flights between origin and destination on a specific date. 
+        Args: 
+            origin (str): Origin city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul) 
+            destination (str): Destination city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul)
+            depart_date (str): Departure date in YYYY-MM-DD format 
+            return_date (str, optional): Return date in YYYY-MM-DD format 
+            adults (int, optional): Number of adults. 
+        Returns: 
+            List[Dict]: List of flight options with details like departure/arrival times, airline, price, etc."""
     
-    Returns:
-        List of flight options
-    """
+    global city_to_iata
     api_key = os.getenv("RAPID_API_KEY")
     if not api_key:
         logger.warning("No RapidAPI key available for flight search")
-        return [{"airline": "API key missing", "price": "N/A", "departure": origin, "arrival": destination}]
-        
+        return [{"error": "API key missing"}]
+    
     try:
-        # Convert date string to datetime if needed
-        if isinstance(date, str):
-            try:
-                date_obj = datetime.strptime(date, '%Y-%m-%d')
-                date_str = date
-            except ValueError:
-                logger.warning(f"Invalid date format: {date}, using current date")
-                date_obj = datetime.now()
-                date_str = date_obj.strftime('%Y-%m-%d')
-        else:
-            date_str = date.strftime('%Y-%m-%d')
-            
-        # Function to convert city to SkyID format
-        def convert_to_sky_id(city):
-            clean_city = city.upper()
-            for word in ['CITY', 'INTERNATIONAL', 'AIRPORT', ',', '.']:
-                clean_city = clean_city.replace(word, '')
-            sky_id = clean_city.strip()[:4]
-            return sky_id.ljust(4, 'X')
-            
+        # Get IATA codes from city names
+        origin_iata = city_to_iata.get(origin, "BOM")
+        destination_iata = city_to_iata.get(destination, "DEL")
+        
+        logger.info(f"Searching flights from {origin} ({origin_iata}) to {destination} ({destination_iata}) on {depart_date}")
+        
+        # Set up API request
+        url = "https://google-flights2.p.rapidapi.com/api/v1/searchFlights"
+        
+        headers = {
+            "x-rapidapi-key": api_key,
+            "x-rapidapi-host": "google-flights2.p.rapidapi.com"
+        }
+        
+        # Set up query parameters
+        params = {
+            "departure_id": origin_iata,
+            "arrival_id": destination_iata,
+            "outbound_date": depart_date,
+            "travel_class": "ECONOMY",
+            "adults": str(adults),
+            "show_hidden": "1",
+            "currency": "INR",
+            "language_code": "en-US",
+            "country_code": "IN"
+        }
+        
+        # Add return date if provided
+        if return_date:
+            params["inbound_date"] = return_date
+        
+        # Make the API request
         async with aiohttp.ClientSession() as session:
-            headers = {
-                'X-RapidAPI-Key': api_key,
-                'X-RapidAPI-Host': 'skyscanner-api.p.rapidapi.com'
-            }
-            
-            origin_id = convert_to_sky_id(origin)
-            destination_id = convert_to_sky_id(destination)
-            
-            url = "https://skyscanner-api.p.rapidapi.com/v3e/browse/en-GB"
-            params = {
-                'originSkyId': origin_id,
-                'destinationSkyId': destination_id,
-                'date': date_str
-            }
-            
-            logger.info(f"Searching flights from {origin} to {destination} on {date_str}")
             async with session.get(url, headers=headers, params=params) as response:
                 if response.status != 200:
                     logger.error(f"Flight API returned status {response.status}")
-                    return [{"airline": "API error", "price": "N/A", "departure": origin, "arrival": destination}]
-                    
+                    return [{"error": f"API error: {response.status}"}]
+                
                 data = await response.json()
+                
+                # Check if the API call was successful
+                if not data.get("status", False):
+                    logger.error(f"Flight API returned error: {data.get('message', 'Unknown error')}")
+                    return [{"error": data.get("message", "Unknown API error")}]
+                
+                # Initialize flights list
                 flights = []
                 
-                if data.get('itineraries', {}).get('results'):
-                    for itinerary in data['itineraries']['results'][:5]:  # Limit to 5 options
-                        if isinstance(itinerary, dict) and itinerary.get('pricingOptions'):
-                            pricing = itinerary['pricingOptions'][0]
-                            if isinstance(pricing, dict):
-                                flights.append({
-                                    'airline': pricing.get('agents', [{}])[0].get('name', 'Unknown Airline'),
-                                    'departure': origin,
-                                    'arrival': destination,
-                                    'price': f"${pricing.get('price', {}).get('amount', 'N/A')}",
-                                    'stops': itinerary.get('legs', [{}])[0].get('stopCount', 0)
-                                })
+                # Extract flight data from the topFlights array only
+                top_flights = data.get("data", {}).get("itineraries", {}).get("topFlights", [])
+                
+                if not top_flights:
+                    logger.info("No flights found")
+                    return [{"message": "No flights found for the requested route and dates"}]
+                
+                # Process each flight
+                for flight in top_flights:
+                    flight_info = {
+                        "departure_time": flight.get("departure_time"),
+                        "arrival_time": flight.get("arrival_time"),
+                        "duration": flight.get("duration", {}).get("text"),
+                        "price": flight.get("price"),
+                        "stops": flight.get("stops", 0),
+                    }
+                    
+                    # Extract detailed flight information if available
+                    if flight.get("flights") and len(flight.get("flights")) > 0:
+                        flight_detail = flight["flights"][0]
+                        flight_info["airline"] = flight_detail.get("airline", "Unknown")
+                        flight_info["flight_number"] = flight_detail.get("flight_number", "Unknown")
+                        
+                        # Add departure airport details
+                        dep_airport = flight_detail.get("departure_airport", {})
+                        flight_info["departure_airport"] = dep_airport.get("airport_name")
+                        flight_info["departure_code"] = dep_airport.get("airport_code")
+                        
+                        # Add arrival airport details
+                        arr_airport = flight_detail.get("arrival_airport", {})
+                        flight_info["arrival_airport"] = arr_airport.get("airport_name")
+                        flight_info["arrival_code"] = arr_airport.get("airport_code")
+                    
+                    # Add any layover information if present
+                    if flight.get("layovers"):
+                        layovers = []
+                        for layover in flight["layovers"]:
+                            layovers.append({
+                                "airport": layover.get("airport_name"),
+                                "duration": layover.get("duration_label")
+                            })
+                        flight_info["layovers"] = layovers
+                    
+                    flights.append(flight_info)
                 
                 logger.info(f"Found {len(flights)} flights")
                 return flights
                 
     except Exception as e:
         logger.error(f"Flight API error: {str(e)}")
-        return [{"airline": f"Error: {str(e)[:50]}", "price": "N/A", "departure": origin, "arrival": destination}]
+        return [{"error": f"Error: {str(e)}"}]
 
-async def hotel_search(location: str, check_in: str, check_out: str) -> List[Dict]:
+
+async def hotel_search(location: str, check_in: str, check_out: str, occupancy: int = 2) -> List[Dict]:
     """
     Search for hotels in a location between check-in and check-out dates.
     
     Args:
-        location: City or location name
-        check_in: Check-in date in YYYY-MM-DD format
-        check_out: Check-out date in YYYY-MM-DD format
+        location (str): City or location name
+        check_in (str): Check-in date in YYYY-MM-DD format
+        check_out (str): Check-out date in YYYY-MM-DD format
+        occupancy (int, optional): Number of people staying. Defaults to 2.
     
     Returns:
-        List of hotel options
+        List[Dict]: List of hotel options with details like name, price, rating, etc.
     """
     api_key = os.getenv("RAPID_API_KEY")
     if not api_key:
         logger.warning("No RapidAPI key available for hotel search")
-        return [{"name": "API key missing", "price": "N/A", "rating": "N/A"}]
-        
+        return [{"error": "API key missing"}]
+    
     try:
-        # Convert date strings to datetime objects if needed
-        if isinstance(check_in, str):
-            try:
-                check_in_obj = datetime.strptime(check_in, '%Y-%m-%d')
-            except ValueError:
-                logger.warning(f"Invalid check-in date format: {check_in}, using current date")
-                check_in_obj = datetime.now()
-        else:
-            check_in_obj = check_in
-            
-        if isinstance(check_out, str):
-            try:
-                check_out_obj = datetime.strptime(check_out, '%Y-%m-%d')
-            except ValueError:
-                logger.warning(f"Invalid check-out date format: {check_out}, using current date + 7")
-                check_out_obj = datetime.now() + timedelta(days=7)
-        else:
-            check_out_obj = check_out
-            
+        # Format dates as comma-separated string
+        dates = f"{check_in},{check_out}"
+        
+        logger.info(f"Searching hotels in {location} from {check_in} to {check_out} for {occupancy} people")
+        
+        # Set up API request
+        url = "https://google-hotels-data.p.rapidapi.com/search"
+        
+        headers = {
+            "x-rapidapi-key": api_key,
+            "x-rapidapi-host": "google-hotels-data.p.rapidapi.com"
+        }
+        
+        # Set up query parameters
+        params = {
+            "query": location,
+            "dates": dates,
+            "occupancy": str(occupancy),
+            "free_cancellation": "false",
+            "accommodation": "hotels",
+            "region": "in",
+            "lang": "en",
+            "currency": "INR"
+        }
+        
+        # Make the API request
         async with aiohttp.ClientSession() as session:
-            headers = {
-                'X-RapidAPI-Key': api_key,
-                'X-RapidAPI-Host': 'hotels4.p.rapidapi.com'
-            }
-            
-            # Get location ID
-            location_url = "https://hotels4.p.rapidapi.com/locations/v3/search"
-            location_params = {
-                'q': location,
-                'locale': 'en_US',
-                'langid': '1033'
-            }
-            
-            logger.info(f"Searching hotels in {location}")
-            async with session.get(location_url, headers=headers, params=location_params) as response:
+            async with session.get(url, headers=headers, params=params) as response:
                 if response.status != 200:
-                    logger.error(f"Hotel location API returned status {response.status}")
-                    return [{"name": "API error", "price": "N/A", "rating": "N/A"}]
-                    
-                location_data = await response.json()
-                if not location_data.get('suggestions', []):
-                    logger.warning(f"No location found for: {location}")
-                    return [{"name": f"Location not found: {location}", "price": "N/A", "rating": "N/A"}]
+                    logger.error(f"Hotel API returned status {response.status}")
+                    return [{"error": f"API error: {response.status}"}]
                 
-                # Get the first location ID
-                location_id = None
-                for suggestion in location_data['suggestions']:
-                    if suggestion['group'] == 'CITY_GROUP':
-                        if suggestion.get('entities'):
-                            location_id = suggestion['entities'][0].get('destinationId')
-                            break
+                # Parse the response
+                response_data = await response.json()
+                body_content = response_data.get("body", "{}")
                 
-                if not location_id:
-                    logger.warning(f"Could not find location ID for: {location}")
-                    return [{"name": f"Could not process location: {location}", "price": "N/A", "rating": "N/A"}]
+                # If body is a string, parse it as JSON
+                if isinstance(body_content, str):
+                    body_data = json.loads(body_content)
+                else:
+                    body_data = body_content
                 
-                # Search for hotels
-                properties_url = "https://hotels4.p.rapidapi.com/properties/v2/list"
-                payload = {
-                    "currency": "USD",
-                    "eapid": 1,
-                    "locale": "en_US",
-                    "siteId": 300000001,
-                    "destination": {"regionId": str(location_id)},
-                    "checkInDate": {
-                        "day": check_in_obj.day,
-                        "month": check_in_obj.month,
-                        "year": check_in_obj.year
-                    },
-                    "checkOutDate": {
-                        "day": check_out_obj.day,
-                        "month": check_out_obj.month,
-                        "year": check_out_obj.year
-                    },
-                    "rooms": [{"adults": 1}],
-                    "resultsStartingIndex": 0,
-                    "resultsSize": 5  # Limit to 5 hotels
-                }
+                # Initialize hotels list
+                hotels = []
                 
-                async with session.post(properties_url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        logger.error(f"Hotel search API returned status {response.status}")
-                        return [{"name": "API error", "price": "N/A", "rating": "N/A"}]
-                        
-                    hotels_data = await response.json()
-                    hotels = []
+                # Extract hotel data from the organic list
+                organic_hotels = body_data.get("organic", [])
+                
+                if not organic_hotels:
+                    logger.info("No hotels found")
+                    return [{"message": "No hotels found for the requested location and dates"}]
+                
+                # Process the top 4 hotels (or fewer if less than 4 are available)
+                for hotel in organic_hotels[:4]:
+                    hotel_info = {
+                        "name": hotel.get("title", "Hotel Name Not Available"),
+                        "price": hotel.get("price", "Price Not Available"),
+                        "rating": hotel.get("rating", "Rating Not Available"),
+                        "reviews_count": hotel.get("reviews_cnt", 0),
+                        "link": hotel.get("link", "")
+                    }
                     
-                    if hotels_data.get('data', {}).get('propertySearch', {}).get('properties'):
-                        for hotel in hotels_data['data']['propertySearch']['properties']:
-                            if isinstance(hotel, dict):
-                                hotels.append({
-                                    'name': hotel.get('name', 'Hotel Name Not Available'),
-                                    'price': hotel.get('price', {}).get('formatted', 'Price Not Available'),
-                                    'rating': hotel.get('reviews', {}).get('score', 'N/A'),
-                                    'address': hotel.get('location', {}).get('address', {}).get('addressLine', 'Address Not Available'),
-                                    'amenities': [amenity.get('text', '') for amenity in hotel.get('amenities', [])[:3] if isinstance(amenity, dict)]
-                                })
+                    # Add coordinates if available
+                    if "coordinates" in hotel and len(hotel["coordinates"]) == 2:
+                        hotel_info["latitude"] = hotel["coordinates"][0]
+                        hotel_info["longitude"] = hotel["coordinates"][1]
                     
-                    logger.info(f"Found {len(hotels)} hotels")
-                    return hotels
-                    
+                    hotels.append(hotel_info)
+                
+                logger.info(f"Found {len(hotels)} hotels")
+                return hotels
+    
     except Exception as e:
         logger.error(f"Hotel API error: {str(e)}")
-        return [{"name": f"Error: {str(e)[:50]}", "price": "N/A", "rating": "N/A"}]
+        return [{"error": f"Error: {str(e)}"}]
+
 
 async def get_weather(location: str, date: Optional[str] = None) -> Dict:
     """
@@ -311,25 +353,30 @@ def get_langchain_tools():
         StructuredTool.from_function(
             func=flight_search,
             name="FlightSearchTool",
-            description="""Search for flights between two cities on a specific date.
-    Args:
-        origin (str): Origin city
-        destination (str): Destination city  
-        date (str): Date in YYYY-MM-DD format
-    Returns:
-        List of flight options with airlines and prices
-    """
+            description="""Search for flights between origin and destination on a specific date. 
+        Args: 
+            origin (str): Origin city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul) 
+            destination (str): Destination city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul)
+            depart_date (str): Departure date in YYYY-MM-DD format 
+            return_date (str, optional): Return date in YYYY-MM-DD format 
+            adults (int, optional): Number of adults. 
+        Returns: 
+            List[Dict]: List of flight options with details like departure/arrival times, airline, price, etc."""
         ),
         StructuredTool.from_function(
             func=hotel_search,
             name="HotelSearchTool",
-            description="""Search for hotels in a city between check-in and check-out dates.
+            description="""
+    Search for hotels in a location between check-in and check-out dates.
+    
     Args:
         location (str): City or location name
         check_in (str): Check-in date in YYYY-MM-DD format
         check_out (str): Check-out date in YYYY-MM-DD format
+        occupancy (int, optional): Number of people staying. Defaults to 2.
+    
     Returns:
-        List of hotel options with names, prices, and ratings
+        List[Dict]: List of hotel options with details like name, price, rating, etc.
     """
         ),
         StructuredTool.from_function(
