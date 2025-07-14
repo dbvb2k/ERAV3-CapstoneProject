@@ -5,47 +5,13 @@ import python_weather
 import os
 import json
 import logging
-from langchain.tools import Tool
+import difflib  # Add this at the top with other imports
+from langchain.tools import StructuredTool
+from tools_helper import *
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-# Simple tool functions - each performs a specific task
-
-# Mapping of major Indian and International cities to their IATA codes
-city_to_iata = {
-    # Indian Cities
-    "Mumbai": "BOM",
-    "Delhi": "DEL",
-    "Bengaluru": "BLR",
-    "Bangalore": "BLR",
-    "Chennai": "MAA",
-    "Kolkata": "CCU",
-    "Hyderabad": "HYD",
-    "Pune": "PNQ",
-    "Ahmedabad": "AMD",
-    "Goa": "GOI",
-    "Jaipur": "JAI",
-    "Kochi": "COK",
-    
-    # International Cities
-    "New York": "JFK",
-    "London": "LHR",
-    "Paris": "CDG",
-    "Tokyo": "HND",
-    "Dubai": "DXB",
-    "Singapore": "SIN",
-    "Hong Kong": "HKG",
-    "Sydney": "SYD",
-    "Los Angeles": "LAX",
-    "San Francisco": "SFO",
-    "Amsterdam": "AMS",
-    "Frankfurt": "FRA",
-    "Toronto": "YYZ",
-    "Bangkok": "BKK",
-    "Istanbul": "IST"
-}
 
 async def flight_search(origin: str, destination: str, depart_date: str, return_date: str = '', adults: int = 1) -> List[Dict]:
     """Search for flights between origin and destination on a specific date. 
@@ -65,12 +31,15 @@ async def flight_search(origin: str, destination: str, depart_date: str, return_
         return [{"error": "API key missing"}]
     
     try:
-        # Get IATA codes from city names
-        origin_iata = city_to_iata.get(origin, "BOM")
-        destination_iata = city_to_iata.get(destination, "DEL")
+        # Enhanced city code matching
+        origin_iata, origin_match_method, origin_matched_city = find_city_code(origin, city_to_iata)
+        destination_iata, dest_match_method, dest_matched_city = find_city_code(destination, city_to_iata)
         
-        logger.info(f"Searching flights from {origin} ({origin_iata}) to {destination} ({destination_iata}) on {depart_date}")
+        logger.info(f"Origin: '{origin}' → '{origin_matched_city}' ({origin_iata}) [match method: {origin_match_method}]")
+        logger.info(f"Destination: '{destination}' → '{dest_matched_city}' ({destination_iata}) [match method: {dest_match_method}]")
         
+        logger.info(f"Searching flights from {origin_matched_city} ({origin_iata}) to {dest_matched_city} ({destination_iata}) on {depart_date}")
+
         # Set up API request
         url = "https://google-flights2.p.rapidapi.com/api/v1/searchFlights"
         
@@ -291,21 +260,22 @@ async def get_weather(location: str, date: Optional[str] = None) -> Dict:
             'humidity': 'N/A'
         }
 
-
-async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -> Dict:
+## TODO: Modify this to only require location and duration as parameters (to avoid preferences dict issue)
+async def plan_itinerary(location: str, duration: int = 7) -> Dict:
     """
     Generate a travel itinerary for a location.
     
     Args:
         location: Destination city or location
         duration: Trip duration in days
-        preferences: Optional preferences dictionary
-    
     Returns:
         Itinerary dictionary
     """
-    if preferences is None:
-        preferences = {}
+    preferences = {
+        "budget_range": "standard",
+        "interests": ["sightseeing", "cultural activities", "nature"],
+        "travel_style": "balanced"
+    }
     
     try:
         logger.info(f"Planning itinerary for {location} ({duration} days)")
@@ -329,6 +299,7 @@ async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -
         interests = preferences.get("interests", ["sightseeing"])
         travel_style = preferences.get("travel_style", "balanced")
         
+        # Template-driven version prompt
         prompt = f"""Create a detailed {duration}-day itinerary for {location}.
 
         Budget: {budget_level}
@@ -342,15 +313,56 @@ async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -
         4. Best time to visit and seasonal considerations
         5. Local transportation tips
 
-        Format the response as a JSON object with these keys:
-        - destination: city name
-        - duration: number of days
-        - best_time_to_visit: best seasons or months
-        - estimated_budget: average daily cost with currency
-        - daily_plans: array of day objects with morning/afternoon/evening activities
-        - transportation_tips: local transportation advice
-        """
+        YOUR RESPONSE MUST BE A VALID JSON OBJECT EXACTLY MATCHING THIS FORMAT:
 
+        ```json
+        {{
+        "destination": "{location}",
+        "duration": {duration},
+        "best_time_to_visit": "October to March (cool weather)",
+        "estimated_budget": "₹8,000 - ₹10,000 per day",
+        "daily_plans": [
+            {{
+            "day": 1,
+            "morning": {{
+                "activity": "Visit Popular Landmark",
+                "time": "9:00 AM - 11:00 AM",
+                "cost": "₹500"
+            }},
+            "afternoon": {{
+                "activity": "Lunch and Shopping",
+                "time": "12:00 PM - 3:00 PM",
+                "cost": "₹1,000"
+            }},
+            "evening": {{
+                "activity": "Dinner at Local Restaurant",
+                "time": "7:00 PM - 9:00 PM",
+                "cost": "₹800"
+            }}
+            }},
+            {{
+            "day": 2,
+            "morning": {{
+                "activity": "Another Attraction",
+                "time": "9:00 AM - 11:00 AM",
+                "cost": "₹400"
+            }},
+            "afternoon": {{
+                "activity": "Visit Museum",
+                "time": "12:00 PM - 3:00 PM",
+                "cost": "₹600"
+            }},
+            "evening": {{
+                "activity": "Cultural Show",
+                "time": "7:00 PM - 9:00 PM",
+                "cost": "₹1,200"
+            }}
+            }}
+            // Add more days as needed to match the specified duration
+        ],
+        "transportation_tips": "Use metro for city travel, auto-rickshaws for short distances"
+        }}
+        """
         # Prepare OpenRouter API request
         payload = {
             "model": "meta-llama/llama-3-8b-instruct",
@@ -378,20 +390,62 @@ async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -
                 
                 # Extract content from response
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                # Try to parse JSON response using our robust parsing approach
+                itinerary_data = None
                 
-                # Try to parse JSON response
                 try:
-                    # Look for JSON content in markdown code blocks
+                    # Step 1: Try extracting from code blocks
                     import re
                     json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content)
+
                     if json_match:
-                        content = json_match.group(1)
-                    elif content.startswith("```json") and content.endswith("```"):
-                        content = content.strip("```json").strip("```").strip()
-                    
-                    # Try to parse the JSON content
-                    itinerary_data = json.loads(content)
-                    
+                        content_to_parse = json_match.group(1)
+                        logger.info("Found JSON in code block, attempting to parse")
+                        
+                        # Try the new advanced parser first
+                        itinerary_data = advanced_json_repair(content_to_parse, location, duration)
+                        if itinerary_data:
+                            logger.info("Successfully parsed JSON with advanced repair")
+                        else:
+                            # Fall back to standard parsing
+                            try:
+                                itinerary_data = json.loads(content_to_parse)
+                                logger.info("Successfully parsed JSON from code block")
+                            except json.JSONDecodeError as e:
+                                logger.info(f"Failed to parse JSON from code block: {str(e)}")
+                                # Try repair function
+                                itinerary_data = repair_and_parse_json(content_to_parse, location, duration, preferences)
+                    elif content.strip().startswith("{") and content.strip().endswith("}"):
+                        # Direct JSON without code blocks
+                        logger.info("Content appears to be direct JSON, attempting to parse")
+                        
+                        # Try the new advanced parser first
+                        itinerary_data = advanced_json_repair(content, location, duration)
+                        if itinerary_data:
+                            logger.info("Successfully parsed direct JSON with advanced repair")
+                        else:
+                            try:
+                                itinerary_data = json.loads(content)
+                                logger.info("Successfully parsed direct JSON")
+                            except json.JSONDecodeError as e:
+                                logger.info(f"Failed to parse direct JSON: {str(e)}")
+                                # Try repair function
+                                itinerary_data = repair_and_parse_json(content, location, duration, preferences)
+                    else:
+                        # Try the advanced parser on the whole content
+                        itinerary_data = advanced_json_repair(content, location, duration)
+                        if itinerary_data:
+                            logger.info("Successfully parsed content with advanced repair")
+                        else:
+                            # Try to repair and parse the entire content
+                            logger.info("Content does not appear to be JSON, attempting repair and extraction")
+                            itinerary_data = repair_and_parse_json(content, location, duration, preferences)
+
+                    # If we still couldn't parse JSON, generate a fallback itinerary
+                    if not itinerary_data:
+                        logger.warning("All JSON parsing attempts failed, using template-based fallback")
+                        itinerary_data = _generate_fallback_itinerary(location, duration, preferences)
+
                     # Ensure expected keys exist
                     required_keys = ["destination", "duration", "daily_plans", "best_time_to_visit", "estimated_budget"]
                     for key in required_keys:
@@ -405,10 +459,20 @@ async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -
                             elif key == "best_time_to_visit":
                                 itinerary_data[key] = "Year-round with seasonal variations"
                             elif key == "estimated_budget":
-                                itinerary_data[key] = f"{budget_level.capitalize()} budget (estimate unavailable)"
-                    
+                                itinerary_data[key] = f"{preferences.get('budget_range', 'moderate').capitalize()} budget (estimate unavailable)"
+
+                    # Normalize day plans structure to ensure consistency
+                    for day_plan in itinerary_data.get("daily_plans", []):
+                        # Ensure each period has the right structure
+                        for period in ["morning", "afternoon", "evening"]:
+                            if period not in day_plan:
+                                day_plan[period] = f"Explore {location}"
+                            elif isinstance(day_plan[period], dict):
+                                # Ensure minimum required fields
+                                if "activity" not in day_plan[period]:
+                                    day_plan[period]["activity"] = f"Explore {location}"
+
                     return itinerary_data
-                    
                 except Exception as e:
                     logger.error(f"Failed to parse itinerary JSON: {str(e)}")
                     return _extract_itinerary_from_text(content, location, duration, preferences)
@@ -524,9 +588,7 @@ def get_langchain_tools():
     
     Returns:
         List of LangChain Tool objects
-    """
-    from langchain.tools import StructuredTool
-    
+    """    
     # Create structured tools that properly handle multiple arguments
     return [
         StructuredTool.from_function(
@@ -575,7 +637,6 @@ Returns:
 Args:
     location (str): Destination city or location
     duration (int): Trip duration in days
-    preferences (dict, optional): Preferences dictionary
 Returns:
     Detailed itinerary with daily plans
 """

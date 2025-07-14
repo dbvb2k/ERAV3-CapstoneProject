@@ -277,12 +277,61 @@ class SimplifiedAgent:
                 for day in itinerary_data["daily_plans"]:
                     day_num = day.get("day", "")
                     itinerary_section += f"**Day {day_num}:**\n"
+                    
+                    # Format morning activities
                     if "morning" in day:
-                        itinerary_section += f"- Morning: {day['morning']}\n"
+                        morning_activity = day["morning"]
+                        # Check if it's a dictionary or string
+                        if isinstance(morning_activity, dict):
+                            activity = morning_activity.get('activity', 'No activity specified')
+                            time = morning_activity.get('time', '')
+                            cost = morning_activity.get('cost', '')
+                            itinerary_section += f"- Morning: {activity}"
+                            if time:
+                                itinerary_section += f" ({time})"
+                            if cost:
+                                itinerary_section += f" - {cost}"
+                            itinerary_section += "\n"
+                        else:
+                            # Handle as string
+                            itinerary_section += f"- Morning: {morning_activity}\n"
+                    
+                    # Format afternoon activities
                     if "afternoon" in day:
-                        itinerary_section += f"- Afternoon: {day['afternoon']}\n"
+                        afternoon_activity = day["afternoon"]
+                        # Check if it's a dictionary or string
+                        if isinstance(afternoon_activity, dict):
+                            activity = afternoon_activity.get('activity', 'No activity specified')
+                            time = afternoon_activity.get('time', '')
+                            cost = afternoon_activity.get('cost', '')
+                            itinerary_section += f"- Afternoon: {activity}"
+                            if time:
+                                itinerary_section += f" ({time})"
+                            if cost:
+                                itinerary_section += f" - {cost}"
+                            itinerary_section += "\n"
+                        else:
+                            # Handle as string
+                            itinerary_section += f"- Afternoon: {afternoon_activity}\n"
+                    
+                    # Format evening activities
                     if "evening" in day:
-                        itinerary_section += f"- Evening: {day['evening']}\n"
+                        evening_activity = day["evening"]
+                        # Check if it's a dictionary or string
+                        if isinstance(evening_activity, dict):
+                            activity = evening_activity.get('activity', 'No activity specified')
+                            time = evening_activity.get('time', '')
+                            cost = evening_activity.get('cost', '')
+                            itinerary_section += f"- Evening: {activity}"
+                            if time:
+                                itinerary_section += f" ({time})"
+                            if cost:
+                                itinerary_section += f" - {cost}"
+                            itinerary_section += "\n"
+                        else:
+                            # Handle as string
+                            itinerary_section += f"- Evening: {evening_activity}\n"
+                    
                     itinerary_section += "\n"
         
         # Determine destination and dates from the tool calls
@@ -323,7 +372,8 @@ class SimplifiedAgent:
         User Query: "{query}"
 
         We have collected REAL travel data that you MUST use in your response. 
-        Do not invent or fabricate any travel information. Use ONLY the data provided below:
+        Do not invent or fabricate any travel information. Do not add additional days in your itinerary.  
+        Use ONLY the data provided below:
 
         {flight_section}
         {hotel_section}
@@ -338,15 +388,18 @@ class SimplifiedAgent:
         5. Provides a detailed daily itinerary from the **Recommended Itinerary**
         6. Creates a cohesive travel plan that incorporates ALL tool data together
         7. Avoid using "Shopping and Shopping" or similar incoherent phrases
+        8. Uses only the information provided in the tool data, not generate any additional text.
 
         Destination: {destination or 'Not specified'}
         Travel period: {from_date or 'Not specified'} to {to_date or 'Not specified'}
-
-        Format your response in a clear, helpful way. Do not mention this prompt or that you're using "real data" - simply present the information as your recommendations.
+        
+        INSTRUCTIONS:
+        - Format your response in a clear, helpful way. Do not mention this prompt or that you're using "real data" - simply present the information as your recommendations.
+        - Repeat the EXACT SAME Itinerary as given by the **Recommended Itinerary:**. DO NOT ADD ADDITIONAL DAYS, limit it to the day activities mentioned in **Recommended Itinerary:**
         """
 
         # Call LLM to generate final response
-        llm = FallbackLLM(temperature=0.2, max_length=2000)
+        llm = FallbackLLM(temperature=0.1, max_length=2000)
         enhanced_response = await llm.apredict(prompt)
         return enhanced_response
     
@@ -355,7 +408,7 @@ class SimplifiedAgent:
         """Set up the agent with tools using FallbackLLM."""
         # Initialize FallbackLLM with debug mode
         llm = FallbackLLM(
-            temperature=0.2,
+            temperature=0.5,
             max_length=2000,
             debug=False  # Enable debug output
         )
@@ -400,7 +453,7 @@ class SimplifiedAgent:
             tools=self.tools,
             verbose=True,
             handle_parsing_errors=True,
-            max_iterations=5,
+            max_iterations=2,
             early_stopping_method="force",
             return_intermediate_steps=True,
         )
@@ -433,7 +486,7 @@ class SimplifiedAgent:
                     
                 # Prepare input for the agent
                 agent_input = {
-                    "input": f"[IMPORTANT: Use appropriate tools to get REAL flight and hotel data] {request.query}",
+                    "input": f"[IMPORTANT: Use appropriate tools to get REAL Flight, Hotel, Itinerary and Weather Data] {request.query}",
                     "context": self._format_context_for_prompt(session.context),
                     "chat_history": session.memory.chat_memory.messages
                 }

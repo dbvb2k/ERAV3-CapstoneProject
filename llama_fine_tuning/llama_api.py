@@ -516,7 +516,7 @@ def extract_tool_calls(text, tools):
     
     return processed_calls if processed_calls else None
 
-## TODO: Format tool prompt and send it to the generate method in main function
+## Format tool prompt and send it to the generate method in main function
 def format_tool_prompt(messages, tools):
     """Generate response with tool calling"""
     try:
@@ -542,7 +542,7 @@ def format_tool_prompt(messages, tools):
             - FlightSearchTool: {"origin": "Mumbai", "destination": "Bangkok", "depart_date": "2025-08-20", "return_date": "2025-08-27", "adults": 2}
             - HotelSearchTool: {"location": "Bangkok", "check_in": "2025-08-20", "check_out": "2025-08-27", "occupancy": 2}
             - WeatherTool: {"location": "Bangkok"}
-            - ItineraryPlannerTool: {"location": "Bangkok", "duration": 7, "preferences": {"budget_range": "moderate", "interests": ["culture", "food"]}}
+            - ItineraryPlannerTool: {"location": "Bangkok", "duration": 7}}
             YOUR RESPONSE MUST BE A LIST OF VALID JSON OBJECTS:
             {
             "tool_calls": [
@@ -552,11 +552,7 @@ def format_tool_prompt(messages, tools):
                     "name": "ItineraryPlannerTool",
                     "arguments": {
                     "location": "Bangkok", 
-                    "duration": 7, 
-                    "preferences": {
-                        "budget_range": "moderate", 
-                        "interests": ["culture", "food"]
-                    }
+                    "duration": 7
                     }
                 }
                 },
@@ -585,6 +581,7 @@ def format_tool_prompt(messages, tools):
             ]
             }
             FINAL INSTRUCTIONS:
+            - YOU MUST CALL "ItineraryPlannerTool" atleast once. This is MANDATORY. 
             - IF THE TOOLS ARE ALREADY CALLED, STRICTLY DO NOT CALL THEM AGAIN. They might be there in text as "<coroutine object flight_search at 0x000001B2C31C6820>". If you encounter this means this tool is already called, do not call it again.
             - MENTION ALL THE TOOL CALLS INSIDE SINGLE JSON ARRAY of "tool_calls"
             - DO NOT write any text before or after the JSON.
@@ -634,7 +631,7 @@ async def custom_swagger_ui_html():
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
     )
 
-## TODO: Add functional tool calling capability here
+## Add functional tool calling capability here
 @app.post("/v1/chat/completions", response_model=Dict[str, Any])
 async def chat_completion(request: ChatRequest):
     """
@@ -674,6 +671,7 @@ async def chat_completion(request: ChatRequest):
             )
         else:
             # Normal chat completion without tools
+            #logger.info(f"Request JSON: {request.model_dump()}")
             prompt = format_chat_prompt(request.messages)
             
         ## Generate text using model

@@ -414,6 +414,35 @@ def extract_travel_entities(text: str) -> Dict[str, Any]:
     
     return entities
 
+def extract_readable_content(response):
+    """Extract readable content from various response structures"""
+    if isinstance(response, str):
+        return response
+        
+    if isinstance(response, dict):
+        # Try different keys that might contain the content
+        for key in ['output', 'content', 'response', 'text', 'message']:
+            if key in response:
+                content = response[key]
+                if isinstance(content, str):
+                    return content
+                elif isinstance(content, dict) and 'content' in content:
+                    return content['content']
+        
+        # If we couldn't find a specific key, see if there's a message field
+        if 'choices' in response and isinstance(response['choices'], list) and response['choices']:
+            choice = response['choices'][0]
+            if isinstance(choice, dict) and 'message' in choice:
+                message = choice['message']
+                if isinstance(message, dict) and 'content' in message:
+                    return message['content']
+    
+    # If all else fails, return a JSON string
+    try:
+        return json.dumps(response, indent=2)
+    except:
+        return str(response)
+
 if mode == "Get Travel Suggestions":
     st.header("🔍 Get Travel Suggestions")
     
@@ -475,7 +504,7 @@ if mode == "Get Travel Suggestions":
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=300.0
+                            timeout=500.0
                         )
                         
                         if response.status_code != 200:
@@ -901,7 +930,7 @@ else:  # Create Detailed Itinerary
                 async def create_itinerary():
                     async with httpx.AsyncClient() as client:
                         # Create the query with location information if available
-                        query = f"Create a detailed itinerary for a trip from {origin} to {destination}"
+                        query = f"Create a detailed itinerary for a trip from {origin} to {destination}. Start Date: {start_date_str}, End Date: {end_date_str}. Total Duration: {duration} days"
                         
                         # Enhance query with location information if available
                         if st.session_state.location_info:
@@ -917,7 +946,7 @@ else:  # Create Detailed Itinerary
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=300.0  # Increased timeout to 60 seconds
+                            timeout=500.0  # Increased timeout to 500 seconds
                         )
                         return response.json()
                 
@@ -1015,7 +1044,7 @@ if st.button("Send Follow-up", key="send_follow_up"):
                             response = await client.post(
                                 f"{AGENT_URL}/agent/execute",
                                 json=request_data,
-                                timeout=60.0  # Increased timeout to 60 seconds
+                                timeout=500.0  # Increased timeout to 60 seconds
                             )
                             return response.json()
                         except httpx.TimeoutException:
@@ -1035,12 +1064,11 @@ if st.button("Send Follow-up", key="send_follow_up"):
                         st.session_state.conversation_history = result["conversation_history"]
                     
                     # Display the response
-                    response_content = result["result"]
+                    response_content = extract_readable_content(result["result"])
                     st.markdown("**AI Response:**")
                     st.markdown(response_content)
                     
                     # Clear the input
-                    st.session_state.follow_up_input = ""
                     st.rerun()
                 else:
                     st.error("Failed to process follow-up question")
