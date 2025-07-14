@@ -109,7 +109,7 @@ class FallbackLLM(BaseChatModel):
             elif isinstance(msg, SystemMessage):
                 api_messages.append({"role": "system", "content": msg.content})
             else:
-                api_messages.append({"role": "user", "content": str(msg.content)})
+                api_messages.append({"role": "assistant", "content": str(msg.content)})
         
         payload = {
             "messages": api_messages,
@@ -178,7 +178,7 @@ class FallbackLLM(BaseChatModel):
             elif isinstance(msg, SystemMessage):
                 api_messages.append({"role": "system", "content": msg.content})
             else:
-                api_messages.append({"role": "user", "content": str(msg.content)})
+                api_messages.append({"role": "assistant", "content": str(msg.content)})
         
         payload = {
             "model": self.openrouter_model,
@@ -256,7 +256,7 @@ class FallbackLLM(BaseChatModel):
     
     async def apredict(self, prompt: str) -> str:
         """Asynchronously generate a text completion from a single prompt string."""
-        messages = [HumanMessage(content=prompt)]
+        messages = [SystemMessage(content=prompt)]
         result = await self._agenerate(messages)
         content = result.generations[0].message.content
         return content if isinstance(content, str) else str(content)

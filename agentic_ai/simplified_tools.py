@@ -291,6 +291,7 @@ async def get_weather(location: str, date: Optional[str] = None) -> Dict:
             'humidity': 'N/A'
         }
 
+
 async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -> Dict:
     """
     Generate a travel itinerary for a location.
@@ -303,43 +304,220 @@ async def plan_itinerary(location: str, duration: int, preferences: Dict = {}) -
     Returns:
         Itinerary dictionary
     """
-    # Use simpler itinerary format
     if preferences is None:
         preferences = {}
     
     try:
         logger.info(f"Planning itinerary for {location} ({duration} days)")
         
-        # Create a simple itinerary
-        itinerary = {
-            "destination": location,
-            "duration": duration,
-            "daily_plans": [],
-            "estimated_budget": preferences.get("budget_range", "Moderate") + " ($100-200 per day)",
-            "best_time_to_visit": "Year-round with seasonal variations"
+        # Get OpenRouter API key from environment
+        openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        if not openrouter_api_key:
+            logger.warning("OpenRouter API key not found, using fallback itinerary")
+            return _generate_fallback_itinerary(location, duration, preferences)
+            
+        # Prepare request to OpenRouter API
+        headers = {
+            "Authorization": f"Bearer {openrouter_api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:8501"),
+            "X-Title": os.getenv("SITE_NAME", "AI Travel Planner")
         }
         
-        # Generate daily plans
-        for day in range(1, min(duration + 1, 8)):  # Cap at 7 days
-            daily_plan = {
-                "day": day,
-                "morning": f"Explore popular attractions in {location}",
-                "afternoon": "Enjoy local cuisine for lunch and visit museums",
-                "evening": "Experience local nightlife and dinner"
-            }
-            itinerary["daily_plans"].append(daily_plan)
-            
+        # Create prompt for detailed itinerary
+        budget_level = preferences.get("budget_range", "moderate")
+        interests = preferences.get("interests", ["sightseeing"])
+        travel_style = preferences.get("travel_style", "balanced")
+        
+        prompt = f"""Create a detailed {duration}-day itinerary for {location}.
+
+        Budget: {budget_level}
+        Travel Style: {travel_style}
+        Interests: {', '.join(interests) if isinstance(interests, list) else interests}
+
+        Please include:
+        1. A day-by-day breakdown with morning, afternoon, and evening activities
+        2. Recommended attractions, restaurants and local experiences
+        3. Estimated costs for major activities and overall daily budget
+        4. Best time to visit and seasonal considerations
+        5. Local transportation tips
+
+        Format the response as a JSON object with these keys:
+        - destination: city name
+        - duration: number of days
+        - best_time_to_visit: best seasons or months
+        - estimated_budget: average daily cost with currency
+        - daily_plans: array of day objects with morning/afternoon/evening activities
+        - transportation_tips: local transportation advice
+        """
+
+        # Prepare OpenRouter API request
+        payload = {
+            "model": "meta-llama/llama-3-8b-instruct",
+            "messages": [
+                {"role": "system", "content": "You are a travel planning assistant that creates detailed itineraries."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 2000
+        }
+        
+        # Make the API request to OpenRouter
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"OpenRouter API call failed: {error_text}")
+                    return _generate_fallback_itinerary(location, duration, preferences)
+                
+                result = await response.json()
+                
+                # Extract content from response
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                
+                # Try to parse JSON response
+                try:
+                    # Look for JSON content in markdown code blocks
+                    import re
+                    json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content)
+                    if json_match:
+                        content = json_match.group(1)
+                    elif content.startswith("```json") and content.endswith("```"):
+                        content = content.strip("```json").strip("```").strip()
+                    
+                    # Try to parse the JSON content
+                    itinerary_data = json.loads(content)
+                    
+                    # Ensure expected keys exist
+                    required_keys = ["destination", "duration", "daily_plans", "best_time_to_visit", "estimated_budget"]
+                    for key in required_keys:
+                        if key not in itinerary_data:
+                            if key == "destination":
+                                itinerary_data[key] = location
+                            elif key == "duration":
+                                itinerary_data[key] = duration
+                            elif key == "daily_plans":
+                                itinerary_data[key] = []
+                            elif key == "best_time_to_visit":
+                                itinerary_data[key] = "Year-round with seasonal variations"
+                            elif key == "estimated_budget":
+                                itinerary_data[key] = f"{budget_level.capitalize()} budget (estimate unavailable)"
+                    
+                    return itinerary_data
+                    
+                except Exception as e:
+                    logger.error(f"Failed to parse itinerary JSON: {str(e)}")
+                    return _extract_itinerary_from_text(content, location, duration, preferences)
+                
+    except Exception as e:
+        logger.error(f"Itinerary planning error: {str(e)}")
+        return _generate_fallback_itinerary(location, duration, preferences)
+
+
+def _generate_fallback_itinerary(location: str, duration: int, preferences: Dict = {}) -> Dict:
+    """Generate a simple fallback itinerary when API calls fail."""
+    itinerary = {
+        "destination": location,
+        "duration": duration,
+        "daily_plans": [],
+        "estimated_budget": preferences.get("budget_range", "Moderate") + " ($100-200 per day)",
+        "best_time_to_visit": "Year-round with seasonal variations"
+    }
+    
+    # Generate daily plans
+    for day in range(1, min(duration + 1, 8)):
+        daily_plan = {
+            "day": day,
+            "morning": f"Explore popular attractions in {location}",
+            "afternoon": "Enjoy local cuisine for lunch and visit museums",
+            "evening": "Experience local nightlife and dinner"
+        }
+        itinerary["daily_plans"].append(daily_plan)
+    
+    return itinerary
+
+
+def _extract_itinerary_from_text(text: str, location: str, duration: int, preferences: Dict = {}) -> Dict:
+    """Extract structured itinerary data from text if JSON parsing fails."""
+    itinerary = {
+        "destination": location,
+        "duration": duration,
+        "daily_plans": [],
+        "estimated_budget": preferences.get("budget_range", "Moderate") + " (estimate)",
+        "best_time_to_visit": "Information unavailable"
+    }
+    
+    try:
+        # Try to extract best time to visit
+        import re
+        best_time_match = re.search(r"best time to visit:?\s*([^\.]+)", text, re.IGNORECASE)
+        if best_time_match:
+            itinerary["best_time_to_visit"] = best_time_match.group(1).strip()
+        
+        # Try to extract budget information
+        budget_match = re.search(r"budget:?\s*([^\.]+)", text, re.IGNORECASE)
+        if budget_match:
+            itinerary["estimated_budget"] = budget_match.group(1).strip()
+        
+        # Try to extract daily plans
+        day_patterns = [
+            r"day\s+(\d+)[:\s]+([^D]+)",  # Day 1: content (until next Day)
+            r"day\s+(\d+)\s*\n+([^D]+)",  # Day 1\n content (until next Day)
+        ]
+        
+        days_found = False
+        for pattern in day_patterns:
+            day_matches = re.findall(pattern, text, re.IGNORECASE)
+            if day_matches:
+                days_found = True
+                for day_num, day_content in day_matches:
+                    day_plan = {"day": int(day_num.strip())}
+                    
+                    # Extract morning, afternoon, evening
+                    morning_match = re.search(r"morning:?\s*([^A-Z]+)", day_content, re.IGNORECASE)
+                    if morning_match:
+                        day_plan["morning"] = morning_match.group(1).strip()
+                    else:
+                        day_plan["morning"] = f"Explore {location}"
+                    
+                    afternoon_match = re.search(r"afternoon:?\s*([^A-Z]+)", day_content, re.IGNORECASE)
+                    if afternoon_match:
+                        day_plan["afternoon"] = afternoon_match.group(1).strip()
+                    else:
+                        day_plan["afternoon"] = "Explore local attractions"
+                    
+                    evening_match = re.search(r"evening:?\s*([^A-Z]+)", day_content, re.IGNORECASE)
+                    if evening_match:
+                        day_plan["evening"] = evening_match.group(1).strip()
+                    else:
+                        day_plan["evening"] = "Enjoy local cuisine and nightlife"
+                    
+                    itinerary["daily_plans"].append(day_plan)
+                
+                break
+        
+        # If no days found, create simple daily plans
+        if not days_found:
+            for day in range(1, min(duration + 1, 8)):
+                daily_plan = {
+                    "day": day,
+                    "morning": f"Explore popular attractions in {location}",
+                    "afternoon": "Enjoy local cuisine for lunch and visit museums",
+                    "evening": "Experience local nightlife and dinner"
+                }
+                itinerary["daily_plans"].append(daily_plan)
+        
         return itinerary
         
     except Exception as e:
-        logger.error(f"Itinerary planning error: {str(e)}")
-        return {
-            "destination": location,
-            "duration": duration,
-            "error": f"Could not generate itinerary: {str(e)}",
-            "daily_plans": []
-        }
-
+        logger.error(f"Error extracting itinerary from text: {str(e)}")
+        return _generate_fallback_itinerary(location, duration, preferences)
+    
+    
 def get_langchain_tools():
     """
     Create LangChain tools using the simplified functions.
@@ -355,52 +533,51 @@ def get_langchain_tools():
             func=flight_search,
             name="FlightSearchTool",
             description="""Search for flights between origin and destination on a specific date. 
-        Args: 
-            origin (str): Origin city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul) 
-            destination (str): Destination city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul)
-            depart_date (str): Departure date in YYYY-MM-DD format 
-            return_date (str, optional): Return date in YYYY-MM-DD format 
-            adults (int, optional): Number of adults. 
-        Returns: 
-            List[Dict]: List of flight options with details like departure/arrival times, airline, price, etc."""
+Args: 
+    origin (str): Origin city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul) 
+    destination (str): Destination city (Mumbai, Delhi, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad, Goa, Jaipur, Kochi, New York, London, Paris, Tokyo, Dubai, Singapore, Hong Kong, Sydney, Los Angeles, San Francisco, Amsterdam, Frankfurt, Toronto, Bangkok, Istanbul)
+    depart_date (str): Departure date in YYYY-MM-DD format 
+    return_date (str, optional): Return date in YYYY-MM-DD format 
+    adults (int, optional): Number of adults. 
+Returns: 
+    List[Dict]: List of flight options with details like departure/arrival times, airline, price, etc."""
         ),
         StructuredTool.from_function(
             func=hotel_search,
             name="HotelSearchTool",
             description="""
     Search for hotels in a location between check-in and check-out dates.
-    
-    Args:
-        location (str): City or location name
-        check_in (str): Check-in date in YYYY-MM-DD format
-        check_out (str): Check-out date in YYYY-MM-DD format
-        occupancy (int, optional): Number of people staying. Defaults to 2.
-    
-    Returns:
-        List[Dict]: List of hotel options with details like name, price, rating, etc.
+Args:
+    location (str): City or location name
+    check_in (str): Check-in date in YYYY-MM-DD format
+    check_out (str): Check-out date in YYYY-MM-DD format
+    occupancy (int, optional): Number of people staying. Defaults to 2.
+
+Returns:
+    List[Dict]: List of hotel options with details like name, price, rating, etc.
     """
         ),
         StructuredTool.from_function(
             func=get_weather,
             name="WeatherTool",
             description="""Get weather information for a location.
-    Args:
-        location (str): City or location name
-        date (str, optional): Date in YYYY-MM-DD format
-    Returns:
-        Weather information including temperature and description
-    """
+Args:
+    location (str): City or location name
+    date (str, optional): Date in YYYY-MM-DD format
+Returns:
+    Weather information including temperature and description
+"""
         ),
         StructuredTool.from_function(
             func=plan_itinerary,
             name="ItineraryPlannerTool",
             description="""Generate a travel itinerary for a location.
-    Args:
-        location (str): Destination city or location
-        duration (int): Trip duration in days
-        preferences (dict, optional): Preferences dictionary
-    Returns:
-        Detailed itinerary with daily plans
-    """
+Args:
+    location (str): Destination city or location
+    duration (int): Trip duration in days
+    preferences (dict, optional): Preferences dictionary
+Returns:
+    Detailed itinerary with daily plans
+"""
         )
     ]

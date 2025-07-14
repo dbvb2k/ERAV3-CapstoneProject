@@ -213,20 +213,26 @@ class SimplifiedAgent:
     async def format_tool_results_for_response(self, query: str, tool_calls: list) -> str:
         """Create a formatted string with tool results for the agent to use in its final response."""
         
-        # Extract actual real data from tool calls
+        # Extract actual real data from all tool calls
         flight_data = []
         hotel_data = []
+        weather_data = None
+        itinerary_data = None
         
         for tc in tool_calls:
             if tc["tool"] == "FlightSearchTool" and isinstance(tc["output"], list) and tc["output"]:
                 flight_data = tc["output"]
             elif tc["tool"] == "HotelSearchTool" and isinstance(tc["output"], list) and tc["output"]:
                 hotel_data = tc["output"]
+            elif tc["tool"] == "WeatherTool" and isinstance(tc["output"], dict):
+                weather_data = tc["output"]
+            elif tc["tool"] == "ItineraryPlannerTool" and isinstance(tc["output"], dict):
+                itinerary_data = tc["output"]
         
-        # Format flight data in user-friendly way
+        # Format flight data
         flight_section = ""
         if flight_data:
-            flight_section = "**Flight Options from Mumbai:**\n\n"
+            flight_section = "**Flight Options:**\n\n"
             for i, flight in enumerate(flight_data[:3], 1):
                 flight_section += f"{i}. **{flight.get('airline', 'Unknown')} {flight.get('flight_number', '')}**\n"
                 flight_section += f"   - Departure: {flight.get('departure_time', 'N/A')}\n"
@@ -234,7 +240,7 @@ class SimplifiedAgent:
                 flight_section += f"   - Duration: {flight.get('duration', 'N/A')}\n"
                 flight_section += f"   - Price: ₹{flight.get('price', 'N/A')}\n\n"
         
-        # Format hotel data in user-friendly way
+        # Format hotel data
         hotel_section = ""
         if hotel_data:
             hotel_section = "**Hotel Options:**\n\n"
@@ -247,31 +253,94 @@ class SimplifiedAgent:
                 else:
                     hotel_section += "\n"
         
-        # Create message for LLM
-        from_date = ""
-        to_date = ""
+        # Format weather data
+        weather_section = ""
+        if weather_data:
+            weather_section = "**Current Weather:**\n\n"
+            weather_section += f"- Temperature: {weather_data.get('temperature', 'N/A')}°C\n"
+            weather_section += f"- Conditions: {weather_data.get('description', 'N/A')}\n"
+            weather_section += f"- Humidity: {weather_data.get('humidity', 'N/A')}%\n\n"
+        
+        # Format itinerary data
+        itinerary_section = ""
+        if itinerary_data:
+            itinerary_section = "**Recommended Itinerary:**\n\n"
+            
+            # Add best time and budget info if available
+            if "best_time_to_visit" in itinerary_data:
+                itinerary_section += f"- Best time to visit: {itinerary_data.get('best_time_to_visit', 'Year-round')}\n"
+            if "estimated_budget" in itinerary_data:
+                itinerary_section += f"- Estimated budget: {itinerary_data.get('estimated_budget', 'Varies by traveler')}\n\n"
+            
+            # Add daily plans if available
+            if "daily_plans" in itinerary_data and itinerary_data["daily_plans"]:
+                for day in itinerary_data["daily_plans"]:
+                    day_num = day.get("day", "")
+                    itinerary_section += f"**Day {day_num}:**\n"
+                    if "morning" in day:
+                        itinerary_section += f"- Morning: {day['morning']}\n"
+                    if "afternoon" in day:
+                        itinerary_section += f"- Afternoon: {day['afternoon']}\n"
+                    if "evening" in day:
+                        itinerary_section += f"- Evening: {day['evening']}\n"
+                    itinerary_section += "\n"
+        
+        # Determine destination and dates from the tool calls
+        destination = None
+        from_date = None
+        to_date = None
+        
+        # Extract destination from tools
+        if itinerary_data and "destination" in itinerary_data:
+            destination = itinerary_data["destination"]
+        elif tool_calls:
+            for tc in tool_calls:
+                if tc["tool"] == "HotelSearchTool" and isinstance(tc["input"], dict):
+                    destination = tc["input"].get("location")
+                    break
+                elif tc["tool"] == "WeatherTool" and isinstance(tc["input"], str):
+                    destination = tc["input"]
+                    break
+        
+        # Extract dates from tools or class attribute
         if hasattr(self, 'travel_dates') and self.travel_dates and len(self.travel_dates) >= 2:
             from_date = self.travel_dates[0]
             to_date = self.travel_dates[1]
+        else:
+            for tc in tool_calls:
+                if tc["tool"] == "HotelSearchTool" and isinstance(tc["input"], dict):
+                    from_date = tc["input"].get("check_in")
+                    to_date = tc["input"].get("check_out")
+                    break
+                elif tc["tool"] == "FlightSearchTool" and isinstance(tc["input"], dict):
+                    from_date = tc["input"].get("depart_date")
+                    to_date = tc["input"].get("return_date")
+                    break
         
-        # Create the prompt for generating the final response
+        # Create the prompt for the final response
         prompt = f"""
-        You are a travel assistant helping a user plan their trip. The user asked:
-        "{query}"
+        You are a travel itinerary summarizer whose role is to only generate a well-structured itinerary from the data given below.
+        User Query: "{query}"
 
-        I have collected REAL flight and hotel data that you MUST use in your response. 
-        Do not invent or fabricate any flight or hotel information.
+        We have collected REAL travel data that you MUST use in your response. 
+        Do not invent or fabricate any travel information. Use ONLY the data provided below:
 
         {flight_section}
         {hotel_section}
+        {weather_section}
+        {itinerary_section}
 
-        Based ONLY on this real data, create a detailed travel itinerary for the user that:
-        1. Acknowledges their request
-        2. Presents the flight options using ONLY the data provided above
-        3. Recommends hotels based ONLY on the data provided above
-        4. Creates a daily itinerary for their trip from {from_date} to {to_date}
-        5. Focuses on the user's interests in culture and food with an adventure travel style
-        6. Makes recommendations for attractions and activities at the destination
+        Based ONLY on this real data, create a comprehensive travel response that:
+        1. Acknowledges the user's request
+        2. Includes ALL available flight options using ONLY the data provided above
+        3. Includes ALL available hotel options using ONLY the data provided above  
+        4. Includes the current weather information if available
+        5. Provides a detailed daily itinerary from the **Recommended Itinerary**
+        6. Creates a cohesive travel plan that incorporates ALL tool data together
+        7. Avoid using "Shopping and Shopping" or similar incoherent phrases
+
+        Destination: {destination or 'Not specified'}
+        Travel period: {from_date or 'Not specified'} to {to_date or 'Not specified'}
 
         Format your response in a clear, helpful way. Do not mention this prompt or that you're using "real data" - simply present the information as your recommendations.
         """
