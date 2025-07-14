@@ -105,12 +105,12 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
-    max_length: Optional[int] = Field(512, description="Maximum length of generated response")
-    temperature: Optional[float] = Field(0.7, description="Temperature for generation")
+    max_length: Optional[int] = Field(2048, description="Maximum length of generated response")
+    temperature: Optional[float] = Field(0.1, description="Temperature for generation")
     top_p: Optional[float] = Field(0.9, description="Top-p sampling parameter")
     do_sample: Optional[bool] = Field(True, description="Whether to use sampling")
     num_return_sequences: Optional[int] = Field(1, description="Number of sequences to return")
-    tools: Optional[List[Dict[str, Any]]] = Field(None, description="Tools/functions the model can call")
+    tools: Optional[List[Dict[str, Any]]] = Field([], description="Tools/functions the model can call")
     tool_choice: Optional[str] = Field("auto", description="How tools should be chosen")
     
     
@@ -355,144 +355,246 @@ def format_chat_prompt(messages: List[ChatMessage]) -> str:
     
     return formatted_prompt
 
-
 def extract_tool_calls(text, tools):
-    """Extract tool calls from generated text"""
+    """Extract tool calls from generated text using a more robust generic approach"""
     import re
     import json
     import uuid
     
-    # Look for JSON in the response
-    json_pattern = r'\{[\s\S]*?\}'
-    json_matches = re.findall(json_pattern, text)
+    # Add debug output with truncated text to avoid huge logs
+    logger.info(f"Attempting to extract tool calls from text: {text[:200]}...")
     
-    if not json_matches:
-        return None
-        
-    # Try to parse each JSON block
-    for json_str in json_matches:
-        try:
-            data = json.loads(json_str)
+    # Initialize the result
+    processed_calls = []
+    
+    # APPROACH 1: Try to parse the entire object first
+    try:
+        # Clean up the text - remove any text before { or after }
+        json_text = re.search(r'(\{[\s\S]*\})', text)
+        if json_text:
+            clean_text = json_text.group(1)
+            data = json.loads(clean_text)
             
-            # If the parsed JSON has tool_calls
-            if "tool_calls" in data:
-                return data["tool_calls"]
-                
-            # If we found function name and arguments
-            if "function" in data and "name" in data["function"] and "arguments" in data["function"]:
-                # Format in the expected structure
-                return [{
-                    "index": 0,
-                    "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
-                    "type": "function",
-                    "function": {
-                        "name": data["function"]["name"],
-                        "arguments": data["function"]["arguments"]
-                    }
-                }]
-                
-            # Check for direct function call format
-            if "name" in data and "arguments" in data:
-                # Format in the expected structure
-                return [{
-                    "index": 0,
-                    "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
-                    "type": "function",
-                    "function": {
-                        "name": data["name"],
-                        "arguments": data["arguments"]
-                    }
-                }]
-                
-        except json.JSONDecodeError:
-            continue
-    
-    # If we find function call patterns without proper JSON
-    # This is a fallback for models that don't format JSON correctly
-    for tool in tools:
-        if "function" in tool:
-            function_name = tool["function"]["name"]
-            if function_name in text:
-                # Try to extract arguments
-                args_match = re.search(rf'{function_name}\s*\((.*?)\)', text, re.DOTALL)
-                if args_match:
-                    args_str = args_match.group(1)
-                    try:
-                        # Try to construct arguments as JSON
-                        args_pairs = args_str.split(',')
-                        args_dict = {}
-                        for pair in args_pairs:
-                            if ':' in pair:
-                                k, v = pair.split(':', 1)
-                                args_dict[k.strip().strip('"\'').strip()] = v.strip().strip('"\'').strip()
-                        
-                        return [{
-                            "index": 0,
-                            "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
+            # If we have a valid tool_calls array, process it
+            if "tool_calls" in data and isinstance(data["tool_calls"], list):
+                for i, call in enumerate(data["tool_calls"]):
+                    if "type" in call and "function" in call and "name" in call["function"]:
+                        processed_call = {
+                            "index": i,
+                            "id": call.get("id", f"call_{uuid.uuid4().hex[:24]}"),
                             "type": "function",
                             "function": {
-                                "name": function_name,
+                                "name": call["function"]["name"],
+                                "arguments": json.dumps(call["function"]["arguments"]) 
+                                    if isinstance(call["function"].get("arguments"), dict) 
+                                    else call["function"].get("arguments", "{}")
+                            }
+                        }
+                        processed_calls.append(processed_call)
+                
+                if processed_calls:
+                    logger.info(f"Successfully parsed complete JSON with {len(processed_calls)} tool calls")
+                    return processed_calls
+    except Exception as e:
+        logger.info(f"Complete JSON parsing failed: {e}")
+    
+    # APPROACH 2: Extract individual tool calls with a generic pattern
+    # This pattern looks for all tool call structures in the text
+    tool_pattern = r'"function"\s*:\s*\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[\s\S]*?(?:\}\s*\}\s*\}|\}\s*\}))'
+    tool_matches = re.findall(tool_pattern, text)
+    
+    if tool_matches:
+        logger.info(f"Found {len(tool_matches)} potential tool calls using generic pattern")
+        
+        for i, (name, args_json) in enumerate(tool_matches):
+            try:
+                # Clean up the arguments JSON
+                # First, find the outermost balanced braces
+                brace_count = 0
+                end_pos = 0
+                
+                for pos, char in enumerate(args_json):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_pos = pos + 1
+                            break
+                
+                # Extract just the balanced JSON object
+                if end_pos > 0:
+                    args_json = args_json[:end_pos]
+                
+                # Remove trailing commas before closing braces (common JSON error)
+                args_json = re.sub(r',\s*}', '}', args_json)
+                
+                # Try to parse the arguments
+                args_dict = json.loads(args_json)
+                
+                # Create a properly formatted tool call
+                processed_calls.append({
+                    "index": i,
+                    "id": f"call_{uuid.uuid4().hex[:24]}",
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(args_dict)
+                    }
+                })
+                logger.info(f"Successfully parsed tool call for {name}")
+            except json.JSONDecodeError as e:
+                logger.info(f"Failed to parse arguments for {name}: {e}")
+                
+                # Special handling for common patterns - last resort
+                if name in [tool["function"]["name"] for tool in tools if "function" in tool]:
+                    # Extract key patterns based on the tool's required parameters
+                    tool_info = next((t for t in tools if "function" in t and t["function"]["name"] == name), None)
+                    
+                    if tool_info:
+                        try:
+                            # Try to extract required parameters as key-value pairs
+                            params = {}
+                            required_params = tool_info["function"]["parameters"].get("required", [])
+                            
+                            # For each required parameter, try to find it in the text
+                            for param in required_params:
+                                param_pattern = fr'"{param}"\s*:\s*(?:"([^"]+)"|(\d+))'
+                                param_match = re.search(param_pattern, args_json)
+                                if param_match:
+                                    # Get either string or numeric value
+                                    value = param_match.group(1) if param_match.group(1) is not None else param_match.group(2)
+                                    params[param] = value if not value.isdigit() else int(value)
+                            
+                            # Only add if we found all required parameters
+                            if all(param in params for param in required_params):
+                                processed_calls.append({
+                                    "index": i,
+                                    "id": f"call_{uuid.uuid4().hex[:24]}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": name,
+                                        "arguments": json.dumps(params)
+                                    }
+                                })
+                                logger.info(f"Reconstructed basic parameters for {name}")
+                        except Exception as ex:
+                            logger.info(f"Failed to extract basic parameters for {name}: {ex}")
+    
+    # Return any tool calls we found, or None if we found none
+    if processed_calls:
+        logger.info(f"Successfully extracted {len(processed_calls)} tool calls")
+        return processed_calls
+    
+    # APPROACH 3: Look for individual tools by name as a last resort
+    if not processed_calls:
+        for tool in tools:
+            if "function" in tool:
+                name = tool["function"]["name"]
+                pattern = fr'"name"\s*:\s*"{re.escape(name)}"[\s\S]*?"arguments"\s*:\s*\{{([^{{}}]+)\}}'
+                match = re.search(pattern, text)
+                
+                if match:
+                    try:
+                        # Clean and parse arguments
+                        args_str = "{" + match.group(1) + "}"
+                        args_str = re.sub(r',\s*}', '}', args_str)
+                        args_dict = json.loads(args_str)
+                        
+                        processed_calls.append({
+                            "index": len(processed_calls),
+                            "id": f"call_{uuid.uuid4().hex[:24]}",
+                            "type": "function",
+                            "function": {
+                                "name": name,
                                 "arguments": json.dumps(args_dict)
                             }
-                        }]
-                    except:
-                        # If parsing fails, return with empty arguments
-                        return [{
-                            "index": 0,
-                            "id": f"call_{uuid.uuid4().hex.replace('-', '')}",
-                            "type": "function",
-                            "function": {
-                                "name": function_name,
-                                "arguments": "{}"
-                            }
-                        }]
+                        })
+                        logger.info(f"Extracted tool call for {name} using name-based pattern")
+                    except json.JSONDecodeError:
+                        logger.info(f"Failed to parse simple arguments for {name}")
     
-    return None
+    return processed_calls if processed_calls else None
 
-
-def generate_tool_response(messages, tools, temperature=0.7, max_tokens=1024):
+## TODO: Format tool prompt and send it to the generate method in main function
+def format_tool_prompt(messages, tools):
     """Generate response with tool calling"""
-    import uuid
-    import time
-    import json
-
-    global model, tokenizer
-
-    if model is None or tokenizer is None:
-        logger.error("Model or tokenizer is not loaded in generate_tool_response.")
-        return {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": "llama-3-8b-instruct-travel",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "Error: Model or tokenizer is not loaded."
-                    },
-                    "finish_reason": "error"
-                }
-            ],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        }
-
     try:
-        # Convert messages to prompt
-        system_msg = None
+        system_msg = ""
         prompt = ""
-
+        
         # Extract system message if present
         for msg in messages:
             if msg["role"] == "system":
-                system_msg = msg["content"]
+                system_msg += msg["content"]
                 break
-
-        # Build prompt with system message first
+        
+        # Append tool definitions to the prompt to guide the model
+        tools_description = "You have access to the following tools:\n"
+        for tool in tools:
+            if "function" in tool:
+                func = tool["function"]
+                tools_description += f"- {func['name']}: {func['description']}\n"
+                
+        # In the generate_tool_response function, replace the instruction variable with:
+        instruction = """IMPORTANT: To use tools, you must provide a PROPER JSON response with tool_calls array.
+            TOOL CALLING EXAMPLES:
+            - FlightSearchTool: {"origin": "Mumbai", "destination": "Bangkok", "depart_date": "2025-08-20", "return_date": "2025-08-27", "adults": 2}
+            - HotelSearchTool: {"location": "Bangkok", "check_in": "2025-08-20", "check_out": "2025-08-27", "occupancy": 2}
+            - WeatherTool: {"location": "Bangkok"}
+            - ItineraryPlannerTool: {"location": "Bangkok", "duration": 7, "preferences": {"budget_range": "moderate", "interests": ["culture", "food"]}}
+            YOUR RESPONSE MUST BE A LIST OF VALID JSON OBJECTS:
+            {
+            "tool_calls": [
+                {
+                "type": "function",
+                "function": {
+                    "name": "ItineraryPlannerTool",
+                    "arguments": {
+                    "location": "Bangkok", 
+                    "duration": 7, 
+                    "preferences": {
+                        "budget_range": "moderate", 
+                        "interests": ["culture", "food"]
+                    }
+                    }
+                }
+                },
+                {
+                "type": "function",
+                "function": {
+                    "name": "HotelSearchTool",
+                    "arguments": {
+                    "location": "Bangkok",
+                    "check_in": "2026-01-20",
+                    "check_out": "2026-01-27",
+                    "occupancy": 4
+                    }
+                }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "WeatherTool",
+                        "arguments": {
+                            "location": "Bangkok"
+                        }
+                    }
+                }
+                
+            ]
+            }
+            FINAL INSTRUCTIONS:
+            - IF THE TOOLS ARE ALREADY CALLED, STRICTLY DO NOT CALL THEM AGAIN. They might be there in text as "<coroutine object flight_search at 0x000001B2C31C6820>". If you encounter this means this tool is already called, do not call it again.
+            - MENTION ALL THE TOOL CALLS INSIDE SINGLE JSON ARRAY of "tool_calls"
+            - DO NOT write any text before or after the JSON.
+            - DO NOT use markdown code blocks.
+            """
+        # Build prompt with system message and tools and instructions first
+        system_msg = system_msg + tools_description + instruction
         if system_msg:
             prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_msg}<|eot_id|>"
-
+        
         # Add other messages
         for msg in messages:
             if msg["role"] != "system":  # Skip system message as we already added it
@@ -502,102 +604,16 @@ def generate_tool_response(messages, tools, temperature=0.7, max_tokens=1024):
                     prompt += f"<|start_header_id|>assistant<|end_header_id|>\n\n{msg['content']}<|eot_id|>"
 
         # Add assistant header for response
-        prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
-
-        # Append tool definitions to the prompt to guide the model
-        tools_description = "\n\nYou have access to the following tools:\n"
-        for tool in tools:
-            if "function" in tool:
-                func = tool["function"]
-                tools_description += f"- {func['name']}: {func['description']}\n"
-
-        # Add instructions about tool usage
-        instruction = "\nTo use a tool, respond with a JSON object that includes a 'tool_calls' array, where each item has 'id', 'type': 'function', and 'function' with 'name' and 'arguments'."
-
-        # Combine final prompt
-        final_prompt = prompt + tools_description + instruction
-
-        # Tokenize prompt
-        inputs = tokenizer(final_prompt, return_tensors="pt", truncation=True, max_length=2048)
-        input_length = inputs.input_ids.shape[1]
-
-        # Move inputs to device
-        device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-
-        logger.info(f"Generating tool response with temperature {temperature}")
-
-        # Generate response
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_length=input_length + max_tokens,
-                temperature=temperature,
-                top_p=0.9,
-                do_sample=True,
-                num_return_sequences=1,
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id
-            )
-
-        # Decode response
-        generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
-
-        # Try to parse tool calls from the generated text
-        tool_calls = extract_tool_calls(generated_text, tools)
-
-        # Build response
-        response = {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": "llama-3-8b-instruct-travel",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": None if tool_calls else generated_text.strip(),
-                        "tool_calls": tool_calls if tool_calls else None
-                    },
-                    "finish_reason": "tool_calls" if tool_calls else "stop"
-                }
-            ],
-            "usage": {
-                "prompt_tokens": input_length,
-                "completion_tokens": len(outputs[0]) - input_length,
-                "total_tokens": len(outputs[0])
-            }
-        }
-
-        # Clean up response
-        if response["choices"][0]["message"]["tool_calls"] is None:
-            del response["choices"][0]["message"]["tool_calls"]
-
-        return response
-
+        prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n" 
+        
+        return prompt
+        
     except Exception as e:
-        logger.error(f"Error generating tool response: {str(e)}")
+        logger.error(f"Error generating tool prompt: {str(e)}")
         logger.error(traceback.format_exc())
         # Return a basic error response
-        return {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": "llama-3-8b-instruct-travel",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": f"Error generating tool response: {str(e)}"
-                    },
-                    "finish_reason": "error"
-                }
-            ],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        }
-
+        return prompt
+    
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -630,6 +646,8 @@ async def chat_completion(request: ChatRequest):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model not loaded"
         )
+        
+    #logger.info(f"Request JSON: {request.model_dump()}")
     
     try:
         # Format chat messages
@@ -638,74 +656,88 @@ async def chat_completion(request: ChatRequest):
             formatted_messages.append({"role": msg.role, "content": msg.content})
         
         # Generate response
-        temperature = request.temperature if request.temperature is not None else 0.7
+        temperature = request.temperature if request.temperature is not None else 0.1
         
         # Handle tool calls if tools are provided
         use_tool_calling = request.tools is not None and len(request.tools) > 0
         
         logger.info(f"Chat request with tool calling: {use_tool_calling}")
-        if use_tool_calling:
-            logger.info(f"Tools: {json.dumps(request.tools, indent=2)}")
+        # if use_tool_calling:
+        #     logger.info(f"Tools: {json.dumps(request.tools, indent=2)}")
             
         # Process with tools if provided
         if use_tool_calling:
             # Call the model with tools
-            response = generate_tool_response(
+            prompt = format_tool_prompt(
                 formatted_messages, 
-                request.tools, 
-                temperature=temperature, 
-                max_tokens=request.max_length if request.max_length is not None else 512
+                request.tools
             )
-            return response
         else:
             # Normal chat completion without tools
-            with torch.no_grad():
-                # Tokenize input for length calculation
-                prompt = format_chat_prompt(request.messages)
-                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
-                input_length = inputs.input_ids.shape[1]
-                
-                # Move inputs to device
-                device = next(model.parameters()).device
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-                
-                # Generate response
-                outputs = model.generate(
-                    **inputs,
-                    max_length=input_length + request.max_length,
-                    temperature=temperature,
-                    top_p=request.top_p,
-                    do_sample=request.do_sample,
-                    num_return_sequences=request.num_return_sequences,
-                    pad_token_id=tokenizer.eos_token_id,
-                    eos_token_id=tokenizer.eos_token_id
-                )
-                
-                # Decode response
-                generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
-                
-                # Return in OpenAI-compatible format
-                return {
-                    "id": f"chatcmpl-{uuid.uuid4()}",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": "llama-3-8b-instruct-travel",
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": generated_text.strip()
-                            },
-                            "finish_reason": "stop"
-                        }
-                    ],
-                    "usage": {
-                        "prompt_tokens": input_length,
-                        "completion_tokens": len(outputs[0]) - input_length,
-                        "total_tokens": len(outputs[0])
-                    }
+            prompt = format_chat_prompt(request.messages)
+            
+        ## Generate text using model
+        with torch.no_grad():
+            # Tokenize input for length calculation
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+            input_length = inputs.input_ids.shape[1]
+            
+            # Move inputs to device
+            device = next(model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            # Generate response
+            outputs = model.generate(
+                **inputs,
+                max_length=input_length + request.max_length,
+                temperature=temperature,
+                top_p=request.top_p,
+                do_sample=request.do_sample,
+                num_return_sequences=request.num_return_sequences,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id
+            )
+            
+            # Decode response
+            generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+        
+        if use_tool_calling:
+            tool_calls = extract_tool_calls(generated_text, request.tools)
+        else:
+            tool_calls = None
+        
+        # Build response safely
+        response = {
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "llama-3-8b-instruct-travel",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None if tool_calls else generated_text.strip()
+                    },
+                    "finish_reason": "tool_calls" if tool_calls else "stop"
                 }
+            ],
+            "usage": {
+                "prompt_tokens": input_length,
+                "completion_tokens": len(outputs[0]) - input_length,
+                "total_tokens": len(outputs[0])
+            }
+        }
+
+        # Add tool_calls safely if they exist
+        if tool_calls:
+            response["choices"][0]["message"]["tool_calls"] = tool_calls
+            logger.info(f"Added {len(tool_calls)} tool calls to response")
+        else:
+            # Ensure tool_calls is not None - should be empty list or not present
+            response["choices"][0]["message"]["tool_calls"] = []
+            
+        return response
                 
     except Exception as e:
         logger.error(f"Error in chat completion: {str(e)}")
