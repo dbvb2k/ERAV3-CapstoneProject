@@ -45,7 +45,7 @@ An intelligent travel planning application that uses AI to create personalized t
 
 4. **Run the application**
    ```bash
-   python run_app.py
+   python start.py
    ```
 
 5. **Access the application**
