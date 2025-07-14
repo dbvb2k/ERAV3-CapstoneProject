@@ -2,3 +2,5 @@
 __pycache__/
 .env
 agentic_ai/logs/
+*.ipynb
+agentic_ai/*.json

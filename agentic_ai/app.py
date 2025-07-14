@@ -1,11 +1,10 @@
+# Keep these imports
 import streamlit as st
 import asyncio
 from datetime import datetime, timedelta
 import nest_asyncio
-from agents.travel_agent import TravelPreferences, ProcessedInput, TravelRequest
-from tools.travel_utils import TravelUtils
-from tools.travel_tools import ItineraryPlannerTool, WeatherTool, LocationInfoTool, HotelSearchTool, FlightSearchTool
-from mcp_server import MCPServer, register_tools
+from models import TravelPreferences, TravelRequest
+from simplified_tools import get_weather, hotel_search, flight_search, plan_itinerary
 import os
 from dotenv import load_dotenv
 from typing import Dict, Any, List
@@ -15,7 +14,6 @@ import logging
 import traceback
 import requests
 from PIL import Image
-
 # Load environment variables
 load_dotenv()
 
@@ -47,10 +45,9 @@ if 'uploaded_image' not in st.session_state:
 if 'location_info' not in st.session_state:
     st.session_state.location_info = None
 
-# Initialize the MCP server and tools
 @st.cache_resource(show_spinner="Loading AI Travel Planner...")
-def initialize_mcp_server():
-    """Initialize the MCP server and tools."""
+def initialize_agent():
+    """Initialize the SimplifiedAgent and tools."""
     try:
         # Load environment variables
         load_dotenv()
@@ -71,34 +68,42 @@ def initialize_mcp_server():
         if not rapidapi_key:
             st.warning("RapidAPI key not found. Flight and hotel data will be unavailable.")
         
-        # Initialize the planner tool with fallback support
-        planner_tool = ItineraryPlannerTool(
-            api_base_url=llama_api_url
-        )
+        # Import SimplifiedAgent
+        from simplified_agent import SimplifiedAgent
+        simplified_agent = SimplifiedAgent()
         
-        # Initialize travel utils
-        travel_utils = TravelUtils(rapidapi_key=rapidapi_key)
+        # Check if the agent server is already running by testing the connection
+        import httpx
+        agent_already_running = False
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(f"{AGENT_URL}/docs")
+                if response.status_code == 200:
+                    print("✅ Agent server already running, skipping initialization")
+                    agent_already_running = True
+        except Exception:
+            # If connection fails, the server is not running
+            pass
+            
+        # Only start the server if it's not already running
+        if not agent_already_running:
+            # Start agent server in background
+            import threading
+            server_thread = threading.Thread(target=simplified_agent.run, daemon=True)
+            server_thread.start()
+            print("✅ Started agent server")
         
-        # Initialize MCP server
-        mcp_server = MCPServer()
+        print("✅ Initialized SimplifiedAgent")
         
-        # Register tools and set up agent
-        tools = register_tools(mcp_server, travel_utils, planner_tool)
-        mcp_server.setup_agent(tools)
-        
-        # Start MCP server in background
-        import threading
-        server_thread = threading.Thread(target=mcp_server.run, daemon=True)
-        server_thread.start()
-        
-        return mcp_server, travel_utils, planner_tool
+        # For backwards compatibility, return a tuple like the original function did
+        return simplified_agent, None, None
     
     except Exception as e:
         st.error(f"Error initializing AI Travel Planner: {str(e)}")
         st.stop()
-
-# Get or create the MCP server and tools
-mcp_server, travel_utils, planner_tool = initialize_mcp_server()
+        
+# Replace the original initialization
+simplified_agent, _, _ = initialize_agent()
 
 # Title and description
 st.title("🌍 AI Travel Planner")
@@ -252,7 +257,8 @@ if st.session_state.conversation_history:
                 "session_id": st.session_state.conversation_session_id,
                 "export_date": datetime.now().isoformat(),
                 "conversation_history": st.session_state.conversation_history,
-                "user_preferences": preferences.model_dump(exclude_none=True)
+                # "user_preferences": preferences.model_dump(exclude_none=True),
+                "location_info": st.session_state.location_info if st.session_state.location_info else None
             }
             
             # Create downloadable JSON
@@ -337,7 +343,7 @@ with st.sidebar:
     
     travel_style = st.selectbox(
         "Travel Style",
-        list(TravelUtils.get_travel_style_descriptions().keys())
+        ["Adventure", "Relaxation", "Cultural", "Family", "Romantic", "Budget", "Luxury"]
     )
     
     interests = st.multiselect(
@@ -408,6 +414,35 @@ def extract_travel_entities(text: str) -> Dict[str, Any]:
     
     return entities
 
+def extract_readable_content(response):
+    """Extract readable content from various response structures"""
+    if isinstance(response, str):
+        return response
+        
+    if isinstance(response, dict):
+        # Try different keys that might contain the content
+        for key in ['output', 'content', 'response', 'text', 'message']:
+            if key in response:
+                content = response[key]
+                if isinstance(content, str):
+                    return content
+                elif isinstance(content, dict) and 'content' in content:
+                    return content['content']
+        
+        # If we couldn't find a specific key, see if there's a message field
+        if 'choices' in response and isinstance(response['choices'], list) and response['choices']:
+            choice = response['choices'][0]
+            if isinstance(choice, dict) and 'message' in choice:
+                message = choice['message']
+                if isinstance(message, dict) and 'content' in message:
+                    return message['content']
+    
+    # If all else fails, return a JSON string
+    try:
+        return json.dumps(response, indent=2)
+    except:
+        return str(response)
+
 if mode == "Get Travel Suggestions":
     st.header("🔍 Get Travel Suggestions")
     
@@ -448,166 +483,175 @@ if mode == "Get Travel Suggestions":
                 try:
                     print("\n=== Starting suggestion generation ===")
                     
-                    # Detect if this is actually an itinerary request
+                    # Detect request type
                     request_type = detect_request_type(travel_input)
                     print(f"\n=== Detected request type: {request_type} ===")
                     
+                    # Prepare request
+                    request_data = {
+                        "query": travel_input, 
+                        "context": context,
+                        "session_id": st.session_state.conversation_session_id,
+                        "conversation_history": st.session_state.conversation_history
+                    }
+                    
+                    print(f"\n=== Sending request to agent ===")
+                    print(f"Query: {travel_input}")
+                    print(f"Context keys: {list(context.keys())}")
+                    
+                    # Make request to agent
                     async with httpx.AsyncClient() as client:
-                        # Prepare request with conversation state
-                        request_data = {
-                            "query": travel_input, 
-                            "context": context,
-                            "session_id": st.session_state.conversation_session_id,
-                            "conversation_history": st.session_state.conversation_history
-                        }
-                        
-                        print(f"\n=== Sending request to agent ===")
-                        print(f"Query: {travel_input}")
-                        print(f"Context keys: {list(context.keys())}")
-                        
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=300.0  # Increased timeout to 60 seconds
+                            timeout=500.0
                         )
-                        print(f"\n=== Agent response received: {response.status_code} ===")
                         
-                        if response.status_code == 200:
-                            result = response.json()
-                            print(f"\n=== Full result: {result} ===")
-                            
-                            if isinstance(result, dict) and "result" in result:
-                                suggestions = result["result"].get("output", "")
-                                print(f"\n=== Raw suggestions from agent: ===\n{suggestions}")
-                                
-                                # Update session state
-                                if "session_id" in result:
-                                    st.session_state.conversation_session_id = result["session_id"]
-                                if "conversation_history" in result:
-                                    st.session_state.conversation_history = result["conversation_history"]
-                                
-                                # Check if the response contains itinerary content
-                                if request_type == "itinerary" or "day 1" in suggestions.lower() or "morning:" in suggestions.lower():
-                                    # This is an itinerary response
-                                    return {"type": "itinerary", "content": suggestions}
-                                else:
-                                    # This is a suggestions response
-                                    return {"type": "suggestions", "content": suggestions}
-                            else:
-                                print(f"\n=== Unexpected result structure: {result} ===")
-                                return {"type": "error", "content": "Unexpected response structure"}
-                        else:
+                        if response.status_code != 200:
                             error_text = response.text
                             print(f"\n=== Agent error: {response.status_code} - {error_text} ===")
                             st.error(f"Error from agent: {error_text}")
                             return {"type": "error", "content": error_text}
-                except httpx.TimeoutException:
-                    error_msg = "Request timed out. The server is taking too long to respond. Please try again."
-                    print(f"\n=== Timeout error: {error_msg} ===")
-                    st.error(error_msg)
-                    return {"type": "error", "content": error_msg}
-                except httpx.ConnectError:
-                    error_msg = "Cannot connect to the travel agent server. Please ensure the MCP server is running."
-                    print(f"\n=== Connection error: {error_msg} ===")
-                    st.error(error_msg)
-                    return {"type": "error", "content": error_msg}
+                            
+                        result = response.json()
+                        print(f"\n=== Full result: {result} ===")
+                        
+                        # Extract information from result
+                        if not isinstance(result, dict) or "result" not in result:
+                            print(f"\n=== Unexpected result structure: {result} ===")
+                            return {"type": "error", "content": "Unexpected response structure"}
+                            
+                        # Update session state
+                        if "session_id" in result:
+                            st.session_state.conversation_session_id = result["session_id"]
+                        if "conversation_history" in result:
+                            st.session_state.conversation_history = result["conversation_history"]
+                            
+                        # Process and display any tool calls
+                        tool_results = {
+                            "flights": [],
+                            "hotels": [],
+                            "weather": {},
+                            "location_info": {}
+                        }
+                        
+                        if "tool_calls" in result:
+                            for tool_call in result["tool_calls"]:
+                                if tool_call["tool"] == "FlightSearchTool":
+                                    tool_results["flights"] = tool_call["output"]
+                                elif tool_call["tool"] == "HotelSearchTool":
+                                    tool_results["hotels"] = tool_call["output"]
+                                elif tool_call["tool"] == "WeatherTool":
+                                    tool_results["weather"] = tool_call["output"]
+                                elif tool_call["tool"] == "LocationInfoTool":
+                                    tool_results["location_info"] = tool_call["output"]
+                        
+                        # Get suggestions content
+                        suggestions = result["result"].get("output", "")
+                        
+                        # Determine response type
+                        if request_type == "itinerary" or "day 1" in suggestions.lower() or "morning:" in suggestions.lower():
+                            return {"type": "itinerary", "content": suggestions, "tool_results": tool_results}
+                        else:
+                            return {"type": "suggestions", "content": suggestions, "tool_results": tool_results}
+                            
                 except Exception as e:
+                    # Error handling (keep existing code)
                     print(f"\n=== Error in get_suggestions: {str(e)} ===")
                     print(f"Error details: {traceback.format_exc()}")
                     st.error(f"An error occurred while generating suggestions: {str(e)}")
                     return {"type": "error", "content": str(e)}
 
-            async def get_weather(destination: str) -> Dict:
-                """Get weather information for the destination"""
+            async def get_weather_info(destination: str) -> Dict:
+                """Get weather information for the destination using simplified tools"""
                 try:
                     print(f"\n=== Getting weather for {destination} ===")
-                    weather_tool = WeatherTool()
-                    weather_info = await weather_tool.execute(destination, datetime.now())
+                    weather_info = await get_weather(destination)
                     print(f"Weather info: {weather_info}")
                     return weather_info
                 except Exception as e:
                     print(f"Error getting weather: {str(e)}")
                     return {"status": "unavailable", "message": "Weather data unavailable"}
 
-            async def get_local_tips(destination: str) -> List[str]:
-                """Get local tips for the destination"""
-                try:
-                    print(f"\n=== Getting local tips for {destination} ===")
-                    location_tool = LocationInfoTool()
-                    location_info = await location_tool.execute(destination)
-                    print(f"Local tips: {location_info.get('tips', [])}")
-                    return location_info.get("tips", [])
-                except Exception as e:
-                    print(f"Error getting local tips: {str(e)}")
-                    return ["Local tips unavailable"]
+            # async def get_local_tips(destination: str) -> List[str]:
+            #     """Get local tips for the destination"""
+            #     try:
+            #         print(f"\n=== Getting local tips for {destination} ===")
+            #         location_tool = LocationInfoTool()
+            #         location_info = await location_tool.execute(destination)
+            #         print(f"Local tips: {location_info.get('tips', [])}")
+            #         return location_info.get("tips", [])
+            #     except Exception as e:
+            #         print(f"Error getting local tips: {str(e)}")
+            #         return ["Local tips unavailable"]
 
-            async def get_hotels(destination: str) -> List[Dict]:
-                """Get hotel suggestions for the destination"""
-                try:
-                    print(f"\n=== Getting hotels for {destination} ===")
-                    hotel_tool = HotelSearchTool(api_key=os.getenv("RAPIDAPI_KEY"))
-                    check_in = datetime.now()
-                    check_out = datetime.now()  # Add 7 days in production
-                    hotels = await hotel_tool.execute(destination, check_in, check_out)
-                    print(f"Found {len(hotels)} hotels")
-                    return hotels[:3]  # Limit to top 3 hotels
-                except Exception as e:
-                    print(f"Error getting hotels: {str(e)}")
-                    return [{"name": "Hotel data unavailable", "price": "N/A", "rating": "N/A", "address": "N/A", "amenities": ["Data unavailable"]}]
+            # async def get_hotels(destination: str) -> List[Dict]:
+            #     """Get hotel suggestions for the destination"""
+            #     try:
+            #         print(f"\n=== Getting hotels for {destination} ===")
+            #         hotel_tool = HotelSearchTool(api_key=os.getenv("RAPIDAPI_KEY"))
+            #         check_in = datetime.now()
+            #         check_out = datetime.now()  # Add 7 days in production
+            #         hotels = await hotel_tool.execute(destination, check_in, check_out)
+            #         print(f"Found {len(hotels)} hotels")
+            #         return hotels[:3]  # Limit to top 3 hotels
+            #     except Exception as e:
+            #         print(f"Error getting hotels: {str(e)}")
+            #         return [{"name": "Hotel data unavailable", "price": "N/A", "rating": "N/A", "address": "N/A", "amenities": ["Data unavailable"]}]
 
-            async def get_flights(destination: str) -> List[Dict]:
-                """Get flight suggestions for the destination"""
-                try:
-                    print(f"\n=== Getting flights for {destination} ===")
-                    flight_tool = FlightSearchTool(api_key=os.getenv("RAPIDAPI_KEY"))
-                    origin = "New York"  # Default origin
-                    flights = await flight_tool.execute(origin, destination, datetime.now())
-                    print(f"Found {len(flights)} flights")
-                    return flights[:3]  # Limit to top 3 flights
-                except Exception as e:
-                    print(f"Error getting flights: {str(e)}")
-                    return [{"airline": "Flight data unavailable", "flight_number": "N/A", "departure": "N/A", "arrival": "N/A", "departure_time": "N/A", "arrival_time": "N/A", "price": "N/A", "duration": "N/A", "stops": "N/A"}]
+            # async def get_flights(destination: str) -> List[Dict]:
+            #     """Get flight suggestions for the destination"""
+            #     try:
+            #         print(f"\n=== Getting flights for {destination} ===")
+            #         flight_tool = FlightSearchTool(api_key=os.getenv("RAPIDAPI_KEY"))
+            #         origin = "New York"  # Default origin
+            #         flights = await flight_tool.execute(origin, destination, datetime.now())
+            #         print(f"Found {len(flights)} flights")
+            #         return flights[:3]  # Limit to top 3 flights
+            #     except Exception as e:
+            #         print(f"Error getting flights: {str(e)}")
+            #         return [{"airline": "Flight data unavailable", "flight_number": "N/A", "departure": "N/A", "arrival": "N/A", "departure_time": "N/A", "arrival_time": "N/A", "price": "N/A", "duration": "N/A", "stops": "N/A"}]
 
-            async def get_best_time(destination: str) -> str:
-                """Get best time to visit using ItineraryPlanner"""
-                try:
-                    print(f"\n=== Getting best time to visit for {destination} ===")
-                    print("\nllama API URL:", llama_api_url)
-                    planner = ItineraryPlannerTool(
-                        # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
-                        # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
-                        # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
-                        api_base_url=llama_api_url
-                    )
-                    suggestions = await planner.execute(destination, 7, {"focus": "best time"})
-                    best_time = suggestions[0].get("best_time_to_visit", "Contact travel agent for details") if suggestions and len(suggestions) > 0 else "Contact travel agent for details"
-                    print(f"Best time to visit: {best_time}")
-                    return best_time
-                except Exception as e:
-                    print(f"Error getting best time: {str(e)}")
-                    return "Best time data unavailable"
+            # async def get_best_time(destination: str) -> str:
+            #     """Get best time to visit using ItineraryPlanner"""
+            #     try:
+            #         print(f"\n=== Getting best time to visit for {destination} ===")
+            #         print("\nllama API URL:", llama_api_url)
+            #         planner = ItineraryPlannerTool(
+            #             # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+            #             # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
+            #             # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+            #             api_base_url=llama_api_url
+            #         )
+            #         suggestions = await planner.execute(destination, 7, {"focus": "best time"})
+            #         best_time = suggestions[0].get("best_time_to_visit", "Contact travel agent for details") if suggestions and len(suggestions) > 0 else "Contact travel agent for details"
+            #         print(f"Best time to visit: {best_time}")
+            #         return best_time
+            #     except Exception as e:
+            #         print(f"Error getting best time: {str(e)}")
+            #         return "Best time data unavailable"
 
-            async def get_estimated_budget(destination: str) -> str:
-                """Get estimated budget using ItineraryPlanner"""
-                try:
-                    print(f"\n=== Getting estimated budget for {destination} ===")
-                    planner = ItineraryPlannerTool(
-                        # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
-                        # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
-                        # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
-                        api_base_url=llama_api_url
-                    )
-                    suggestions = await planner.execute(destination, 7, {"focus": "budget"})
-                    budget = suggestions[0].get("estimated_budget", "Varies by season") if suggestions and len(suggestions) > 0 else "Varies by season"
-                    print(f"Estimated budget: {budget}")
-                    return budget
-                except Exception as e:
-                    print(f"Error getting estimated budget: {str(e)}")
-                    return "Budget data unavailable"
+            # async def get_estimated_budget(destination: str) -> str:
+            #     """Get estimated budget using ItineraryPlanner"""
+            #     try:
+            #         print(f"\n=== Getting estimated budget for {destination} ===")
+            #         planner = ItineraryPlannerTool(
+            #             # openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+            #             # site_url=os.getenv("SITE_URL", "http://localhost:8501"),
+            #             # site_name=os.getenv("SITE_NAME", "AI Travel Planner")
+            #             api_base_url=llama_api_url
+            #         )
+            #         suggestions = await planner.execute(destination, 7, {"focus": "budget"})
+            #         budget = suggestions[0].get("estimated_budget", "Varies by season") if suggestions and len(suggestions) > 0 else "Varies by season"
+            #         print(f"Estimated budget: {budget}")
+            #         return budget
+            #     except Exception as e:
+            #         print(f"Error getting estimated budget: {str(e)}")
+            #         return "Budget data unavailable"
 
             # Run the async function
             result = asyncio.run(get_suggestions())
-            print(f"\n=== Got result: {result} ===")
+            # print(f"\n=== Got result: {result} ===")
             
             # Display results based on type
             if result["type"] == "itinerary":
@@ -629,7 +673,7 @@ if mode == "Get Travel Suggestions":
                 
                 # Convert the suggestions into a structured format
                 async def process_suggestions(suggestions_text):
-                    """Process suggestions and add additional information"""
+                    """Process suggestions and add additional information using simplified tools"""
                     suggestions_list = []
                     if isinstance(suggestions_text, str):
                         # Try multiple parsing strategies
@@ -678,20 +722,67 @@ if mode == "Get Travel Suggestions":
                                 
                                 print(f"\n=== Processing suggestion {i+1} for {destination} ===")
                                 
-                                # Create suggestion with additional information
-                                suggestion = {
-                                    "destination": destination,
-                                    "description": description,
-                                    "best_time_to_visit": await get_best_time(destination),
-                                    "estimated_budget": await get_estimated_budget(destination),
-                                    "duration": "7",  # Default to a week as per user request
-                                    "weather": await get_weather(destination),
-                                    "local_tips": await get_local_tips(destination),
-                                    "hotels": await get_hotels(destination),
-                                    "flights": await get_flights(destination)
-                                }
-                                suggestions_list.append(suggestion)
-                                print(f"\n=== Completed processing for {destination} ===")
+                                try:
+                                    # Get current date and a week later for hotel search
+                                    from datetime import datetime, timedelta
+                                    today = datetime.now()
+                                    next_week = today + timedelta(days=7)
+                                    check_in = today.strftime("%Y-%m-%d")
+                                    check_out = next_week.strftime("%Y-%m-%d")
+                                    
+                                    # Use simplified tools to get destination information
+                                    weather_info = await get_weather(destination)
+                                    hotels_info = await hotel_search(destination, check_in, check_out)
+                                    flights_info = await flight_search("New York", destination, check_in)  # Default origin
+                                    itinerary_info = await plan_itinerary(destination, 7, preferences.model_dump(exclude_none=True))
+                                    
+                                    # Extract best time and budget from itinerary info
+                                    best_time = itinerary_info.get("best_time_to_visit", "Year-round with seasonal variations")
+                                    estimated_budget = itinerary_info.get("estimated_budget", "Varies by traveler preferences")
+                                    
+                                    # Get local tips from daily plans if available
+                                    local_tips = []
+                                    if "daily_plans" in itinerary_info:
+                                        for day_plan in itinerary_info["daily_plans"][:3]:  # Get tips from first 3 days
+                                            if "morning" in day_plan:
+                                                local_tips.append(f"Check out {day_plan['morning']}")
+                                            if "afternoon" in day_plan:
+                                                local_tips.append(f"Try {day_plan['afternoon']}")
+                                    
+                                    # If no tips were extracted, provide a fallback
+                                    if not local_tips:
+                                        local_tips = ["Explore local cuisine", "Visit popular attractions", "Experience local culture"]
+                                    
+                                    # Create suggestion with all gathered information
+                                    suggestion = {
+                                        "destination": destination,
+                                        "description": description,
+                                        "best_time_to_visit": best_time,
+                                        "estimated_budget": estimated_budget,
+                                        "duration": "7",  # Default to a week as per user request
+                                        "weather": weather_info,
+                                        "local_tips": local_tips,
+                                        "hotels": hotels_info[:3],  # Limit to top 3 hotels
+                                        "flights": flights_info[:3]  # Limit to top 3 flights
+                                    }
+                                    
+                                    suggestions_list.append(suggestion)
+                                    print(f"\n=== Completed processing for {destination} ===")
+                                    
+                                except Exception as e:
+                                    print(f"Error processing destination {destination}: {str(e)}")
+                                    # Add a basic suggestion with error information
+                                    suggestions_list.append({
+                                        "destination": destination,
+                                        "description": description,
+                                        "best_time_to_visit": "Data unavailable",
+                                        "estimated_budget": "Data unavailable",
+                                        "duration": "7",
+                                        "weather": {"temperature": "N/A", "description": "Weather data unavailable", "humidity": "N/A"},
+                                        "local_tips": ["Data temporarily unavailable"],
+                                        "hotels": [{"name": "Hotel data unavailable", "price": "N/A", "rating": "N/A"}],
+                                        "flights": [{"airline": "Flight data unavailable", "price": "N/A", "departure": "N/A", "arrival": "N/A"}]
+                                    })
                     
                     return suggestions_list
                 
@@ -806,11 +897,15 @@ else:  # Create Detailed Itinerary
             try:
                 # Create travel request
                 end_date = datetime.combine(start_date, datetime.min.time()) + timedelta(days=duration)
+                # Convert start_date and end_date to DD-MM-YYYY format
+                start_date_str = datetime.combine(start_date, datetime.min.time()).strftime("%d-%m-%Y")
+                end_date_str = end_date.strftime("%d-%m-%Y")
+
                 travel_request = TravelRequest(
                     origin=origin,
                     destination=destination,
-                    start_date=datetime.combine(start_date, datetime.min.time()),
-                    end_date=end_date,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
                     num_travelers=preferences.group_size,
                     preferences=preferences.__dict__,
                     budget=None
@@ -835,7 +930,7 @@ else:  # Create Detailed Itinerary
                 async def create_itinerary():
                     async with httpx.AsyncClient() as client:
                         # Create the query with location information if available
-                        query = f"Create a detailed itinerary for a trip from {origin} to {destination}"
+                        query = f"Create a detailed itinerary for a trip from {origin} to {destination}. Start Date: {start_date_str}, End Date: {end_date_str}. Total Duration: {duration} days"
                         
                         # Enhance query with location information if available
                         if st.session_state.location_info:
@@ -847,10 +942,11 @@ else:  # Create Detailed Itinerary
                             "session_id": st.session_state.conversation_session_id,
                             "conversation_history": st.session_state.conversation_history
                         }
+                        ## INFO: Request to the agent to create itinerary
                         response = await client.post(
                             f"{AGENT_URL}/agent/execute",
                             json=request_data,
-                            timeout=60.0  # Increased timeout to 60 seconds
+                            timeout=500.0  # Increased timeout to 500 seconds
                         )
                         return response.json()
                 
@@ -913,6 +1009,7 @@ follow_up_question = st.text_input(
     key="follow_up_input"
 )
 
+## TODO: Debug the output parsing error coming here
 if st.button("Send Follow-up", key="send_follow_up"):
     if follow_up_question.strip():
         with st.spinner("Processing your follow-up question..."):
@@ -947,7 +1044,7 @@ if st.button("Send Follow-up", key="send_follow_up"):
                             response = await client.post(
                                 f"{AGENT_URL}/agent/execute",
                                 json=request_data,
-                                timeout=60.0  # Increased timeout to 60 seconds
+                                timeout=500.0  # Increased timeout to 60 seconds
                             )
                             return response.json()
                         except httpx.TimeoutException:
@@ -967,12 +1064,11 @@ if st.button("Send Follow-up", key="send_follow_up"):
                         st.session_state.conversation_history = result["conversation_history"]
                     
                     # Display the response
-                    response_content = result["result"].get("output", "")
+                    response_content = extract_readable_content(result["result"])
                     st.markdown("**AI Response:**")
                     st.markdown(response_content)
                     
                     # Clear the input
-                    st.session_state.follow_up_input = ""
                     st.rerun()
                 else:
                     st.error("Failed to process follow-up question")

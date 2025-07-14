@@ -14,8 +14,8 @@ import re
 class TravelRequest:
     origin: str
     destination: str
-    start_date: datetime
-    end_date: datetime
+    start_date: str
+    end_date: str
     num_travelers: int
     preferences: Dict[str, any]
     budget: Optional[float] = None
