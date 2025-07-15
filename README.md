@@ -126,19 +126,19 @@ ERAV3-CapstoneProject/
 
 ---
 
-## 🖼️ Sample Application Screenshots
+## 🖼️ Sample Application Screenshots (on AWS ECS)
 
 <div align="center">
-  <img src="PLACEHOLDER_FOR_UI_IMAGE" alt="AI Travel Planner UI" width="600" />
+  <img src="images/on_aws-scr2.png" alt="AI Travel Planner UI" width="600" />
   <br>
-  <img src="PLACEHOLDER_FOR_ITINERARY_IMAGE" alt="Sample Itinerary Output" width="600" />
+  <img src="images/on_aws-scr4.png" alt="Sample Itinerary Output" width="600" />
 </div>
 
 ---
 
 ## 🌐 Live Demo
 
-> **URL:** [PLACEHOLDER_FOR_LIVE_DEMO_URL](#)
+**URL:** [Agentic AI Travel Planner Application - Deployed on AWS](http://travel-publi-y6qrr2fcbzhh-1562003745.ap-south-1.elb.amazonaws.com/)
 
 ---
 
@@ -206,7 +206,7 @@ For further help:
 
 ## 📄 License
 
-This project is part of the ERA-V3 Capstone for The School of AI. See individual component folders for license details.
+This project is part of the ERA-V3 Capstone Project for The School of AI. See individual component folders for license details.
 
 ---
 
